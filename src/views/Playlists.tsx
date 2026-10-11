@@ -29,6 +29,7 @@ export function Playlists() {
   const version = useApp((s) => s.libraryVersion);
   const playlistId = useApp((s) => s.playlistId);
   const openPlaylist = useApp((s) => s.openPlaylist);
+  const openImport = useApp((s) => s.openImport);
   const toast = useApp((s) => s.toast);
   const [all, setAll] = useState<LessonSummary[] | null>(null);
   const [lists, setLists] = useState<Playlist[] | null>(null);
@@ -110,7 +111,14 @@ export function Playlists() {
       <AnimatePresence mode="wait" initial={false}>
         {open && all ? (
           <motion.div key={`pl-${open.id}`} className="pl-view" initial={{ opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 18 }} transition={{ duration: 0.22, ease: [0.2, 0.8, 0.2, 1] }}>
-            <PlaylistPage p={open} all={all} onUpdate={(patch) => update(open.id, patch)} onDelete={() => remove(open)} onAdd={() => setPicker(open.id)} />
+            <PlaylistPage
+              p={open}
+              all={all}
+              onUpdate={(patch) => update(open.id, patch)}
+              onDelete={() => remove(open)}
+              onAdd={() => setPicker(open.id)}
+              onImport={() => openImport(null, undefined, open.id)}
+            />
           </motion.div>
         ) : (
           <motion.div key="home" className="pl-view" initial={{ opacity: 0, x: -18 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -18 }} transition={{ duration: 0.22, ease: [0.2, 0.8, 0.2, 1] }}>
@@ -303,7 +311,7 @@ function PlaylistCard({ p, ls, index, onDelete }: { p: Playlist; ls: LessonSumma
 
 // ---------- une playlist ----------
 
-function PlaylistPage({ p, all, onUpdate, onDelete, onAdd }: { p: Playlist; all: LessonSummary[]; onUpdate(patch: PlaylistPatch): void; onDelete(): void; onAdd(): void }) {
+function PlaylistPage({ p, all, onUpdate, onDelete, onAdd, onImport }: { p: Playlist; all: LessonSummary[]; onUpdate(patch: PlaylistPatch): void; onDelete(): void; onAdd(): void; onImport(): void }) {
   const openPlaylist = useApp((s) => s.openPlaylist);
   const openLesson = useApp((s) => s.openLesson);
   const lang = useApp((s) => s.lang)();
@@ -393,6 +401,9 @@ function PlaylistPage({ p, all, onUpdate, onDelete, onAdd }: { p: Playlist; all:
                 <button className="btn primary lg glow" onClick={() => playPlaylist(p)} disabled={!ls.length}>
                   <Icon name="play" size={15} /> {resume ? t("Reprendre", "Resume") : t("Écouter", "Play")}
                 </button>
+                <button className="btn outline lg" onClick={onImport}>
+                  <Icon name="import" size={16} /> {t("Importer des leçons", "Import lessons")}
+                </button>
                 <button className="btn outline lg" onClick={onAdd}>
                   <Icon name="plus" size={16} /> {t("Ajouter des leçons", "Add lessons")}
                 </button>
@@ -421,7 +432,10 @@ function PlaylistPage({ p, all, onUpdate, onDelete, onAdd }: { p: Playlist; all:
           {ls.length === 0 ? (
             <div className="pl-empty">
               <p>{t("Cette playlist attend ses premières leçons.", "This playlist is waiting for its first lessons.")}</p>
-              <button className="btn soft" onClick={onAdd}>
+              <button className="btn soft" onClick={onImport}>
+                <Icon name="import" size={15} /> {t("Importer des leçons", "Import lessons")}
+              </button>
+              <button className="btn ghost" onClick={onAdd}>
                 <Icon name="plus" size={15} /> {t("Ajouter des leçons", "Add lessons")}
               </button>
             </div>

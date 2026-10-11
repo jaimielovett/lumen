@@ -34,6 +34,8 @@ export interface JobSpec {
   discoverId?: string;
   /** podcast sur mesure : Gemini l'écrit et le dit */
   podcast?: PodcastRequest;
+  /** playlist à laquelle une leçon préparée en arrière-plan doit être ajoutée */
+  playlistId?: number;
 }
 
 export interface Job {
@@ -184,6 +186,16 @@ async function run(job: Job): Promise<number[]> {
   throw new Error(t("Rien à importer.", "Nothing to import."));
 }
 
+/** Ajoute une importation en arrière-plan à sa playlist de destination, si elle existe encore. */
+async function addToPlaylist(id: number, ids: number[]): Promise<string | null> {
+  const lists = await api().playlistsList(useApp.getState().lang());
+  const playlist = lists.find((p) => p.id === id);
+  if (!playlist) throw new Error(t("Cette playlist n'existe plus.", "This playlist no longer exists."));
+  const additions = ids.filter((lessonId) => !playlist.lessons.includes(lessonId));
+  if (additions.length) await api().playlistUpdate(id, { lessons: [...playlist.lessons, ...additions] });
+  return playlist.name;
+}
+
 let pumping = false;
 
 /** Prépare les leçons demandées, l'une après l'autre. */
@@ -208,15 +220,30 @@ async function pump() {
         if (job.spec.discoverId && ids.length) void useDiscover.getState().mark(job.spec.lang, job.spec.discoverId, ids[0]);
         app.bumpLibrary();
         void app.refreshKnown();
+        let playlistName: string | null = null;
+        if (job.spec.playlistId && ids.length) {
+          try {
+            playlistName = await addToPlaylist(job.spec.playlistId, ids);
+          } catch (e) {
+            app.toast(t(`La leçon est prête, mais n'a pas pu rejoindre la playlist : ${errorText(e)}`, `The lesson is ready, but couldn't be added to the playlist: ${errorText(e)}`), "error");
+          }
+        }
         const title = job.spec.title;
         app.toast(
-          job.spec.podcast
+          playlistName
+            ? ids.length > 1
+              ? t(`${ids.length} leçons ajoutées à « ${playlistName} »`, `${ids.length} lessons added to “${playlistName}”`)
+              : t(`« ${title} » ajoutée à « ${playlistName} »`, `“${title}” added to “${playlistName}”`)
+            : job.spec.podcast
             ? t(`Votre podcast « ${title} » est prêt`, `Your podcast “${title}” is ready`)
             : ids.length > 1
             ? t(`« ${title} » est prête (${count(ids.length, "leçon", "leçons", "", "")})`, `“${title}” is ready (${count(ids.length, "", "", "lesson", "lessons")})`)
             : t(`« ${title} » est prête`, `“${title}” is ready`),
           "light",
-          { label: t("Ouvrir", "Open"), run: () => useApp.getState().openLesson(ids[0]) },
+          {
+            label: t("Ouvrir", "Open"),
+            run: () => (playlistName ? useApp.getState().openPlaylist(job.spec.playlistId!) : useApp.getState().openLesson(ids[0])),
+          },
         );
       } catch (e) {
         const msg = errorText(e);

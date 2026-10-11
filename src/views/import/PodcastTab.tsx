@@ -57,7 +57,7 @@ const notebookLevel = (level: number) =>
     t("Parle comme entre locuteurs natifs, avec un vocabulaire riche et précis.", "Speak as native speakers do, with rich and precise vocabulary."),
   ][Math.min(5, Math.max(1, level)) - 1];
 
-export function usePodcastForm(lang: LangCode) {
+export function usePodcastForm(lang: LangCode, playlistId?: number) {
   const settings = useApp((s) => s.settings);
   const setSetting = useApp((s) => s.setSetting);
   const learner = useLevel(lang);
@@ -112,7 +112,7 @@ export function usePodcastForm(lang: LangCode) {
     /** confie le podcast à la file des leçons en préparation */
     create() {
       const r = request();
-      useImports.getState().enqueue({ key: `podcast:${Date.now()}`, lang, title: r.topic, image: "", podcast: r });
+      useImports.getState().enqueue({ key: `podcast:${Date.now()}`, lang, title: r.topic, image: "", podcast: r, playlistId });
       setTopic("");
       setDetails("");
     },

@@ -24,7 +24,7 @@ import {
 import { count, formatNumber, locale, pick, t } from "../lib/i18n";
 import { inLang } from "../lib/langs";
 import { formatBytes, formatDuration, useApp, type ImportTab } from "../lib/store";
-import type { DiscoverItem, ImportEvent, LinkInfo, LinkMedia, NewLesson } from "../lib/types";
+import type { DiscoverItem, ImportEvent, LinkInfo, LinkMedia, NewLesson, Playlist } from "../lib/types";
 import { PodcastTab, usePodcastForm } from "./import/PodcastTab";
 
 type Tab = ImportTab;
@@ -107,6 +107,7 @@ export function ImportSheet() {
   const item = useApp((s) => s.importItem);
   const linkToOpen = useApp((s) => s.importUrl);
   const tabToOpen = useApp((s) => s.importTab);
+  const playlistId = useApp((s) => s.importPlaylistId);
   const close = useApp((s) => s.closeImport);
   const lang = useApp((s) => s.lang)();
   const info = useApp((s) => s.info);
@@ -129,7 +130,8 @@ export function ImportSheet() {
   const [mediaFiles, setMediaFiles] = useState<string[]>([]);
   const [found, setFound] = useState<Found | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const podcast = usePodcastForm(lang);
+  const [targetPlaylist, setTargetPlaylist] = useState<Playlist | null>(null);
+  const podcast = usePodcastForm(lang, playlistId ?? undefined);
 
   const asrReady = models.some((m) => m.kind === "asr" && m.installed);
   const asrModel = models.find((m) => m.kind === "asr" && m.id === "whisper-turbo") ?? models.find((m) => m.kind === "asr");
@@ -151,6 +153,12 @@ export function ImportSheet() {
   useEffect(() => {
     if (!open) return;
     reset();
+    if (playlistId) {
+      void api()
+        .playlistsList(lang)
+        .then((lists) => setTargetPlaylist(lists.find((p) => p.id === playlistId) ?? null))
+        .catch(() => setTargetPlaylist(null));
+    } else setTargetPlaylist(null);
     if (tabToOpen) {
       setTab(tabToOpen);
       return;
@@ -191,9 +199,26 @@ export function ImportSheet() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, files, item, linkToOpen, tabToOpen]);
 
-  const finish = (ids: number[], label: string) => {
+  const finish = async (ids: number[], label: string) => {
     // la carte de Découvrir mène désormais à la leçon
     if (item && ids.length) void useDiscover.getState().mark(lang, item.id, ids[0]);
+    if (playlistId && ids.length) {
+      const lists = await api().playlistsList(lang);
+      const destination = lists.find((p) => p.id === playlistId);
+      if (!destination) throw new Error(t("Cette playlist n'existe plus.", "This playlist no longer exists."));
+      const additions = ids.filter((id) => !destination.lessons.includes(id));
+      await api().playlistUpdate(destination.id, { lessons: [...destination.lessons, ...additions] });
+      bump();
+      toast(
+        ids.length > 1
+          ? t(`${ids.length} leçons ajoutées à « ${destination.name} »`, `${ids.length} lessons added to “${destination.name}”`)
+          : t(`Leçon ajoutée à « ${destination.name} »`, `Lesson added to “${destination.name}”`),
+        "light",
+      );
+      close();
+      useApp.getState().openPlaylist(destination.id);
+      return;
+    }
     bump();
     toast(label, "light");
     close();
@@ -238,7 +263,7 @@ export function ImportSheet() {
     run(t("Création de la leçon", "Creating the lesson"), async () => {
       const body = cleanText(text);
       const ids = await create([{ title: title.trim() || body.split(/\s+/).slice(0, 6).join(" "), text: body, kind: "text", source: "" }]);
-      finish(ids, t("Leçon créée", "Lesson created"));
+      await finish(ids, t("Leçon créée", "Lesson created"));
     });
 
   // ---------- lien : article, vidéo, podcast, Spotify ----------
@@ -296,7 +321,7 @@ export function ImportSheet() {
         }
       }
       if (!ids.length) throw firstError;
-      finish(
+      await finish(
         ids,
         ids.length > 1
           ? t(`${ids.length} leçons créées`, `${ids.length} lessons created`)
@@ -339,7 +364,7 @@ export function ImportSheet() {
       if (pend.length === 1) setPreview(pend[0]);
       else if (pend.length > 1) {
         const ids = await create(pend);
-        finish(ids, t(`${ids.length} leçons créées`, `${ids.length} lessons created`));
+        await finish(ids, t(`${ids.length} leçons créées`, `${ids.length} lessons created`));
       }
     });
   }
@@ -354,7 +379,7 @@ export function ImportSheet() {
       if (!book) return;
       const chosen = book.chapters.filter((c) => c.on);
       const ids = await create(chosen.map((c) => ({ title: c.title, text: c.text, kind: "book", source: "", collection: book.title })));
-      finish(ids, t(`${chosen.length} chapitre${chosen.length > 1 ? "s" : ""} ajouté${chosen.length > 1 ? "s" : ""}`, `${count(chosen.length, "", "", "chapter", "chapters")} added`));
+      await finish(ids, t(`${chosen.length} chapitre${chosen.length > 1 ? "s" : ""} ajouté${chosen.length > 1 ? "s" : ""}`, `${count(chosen.length, "", "", "chapter", "chapters")} added`));
     });
 
   // ---------- audio et vidéo ----------
@@ -377,7 +402,7 @@ export function ImportSheet() {
         const prefix = mediaFiles.length > 1 ? `${i + 1}/${mediaFiles.length} · ` : "";
         ids.push(await api().importMedia(lang, mediaFiles[i], null, onImportEvent(prefix)));
       }
-      finish(ids, ids.length > 1 ? t(`${ids.length} transcriptions prêtes`, `${ids.length} transcripts ready`) : t("Transcription prête", "Transcript ready"));
+      await finish(ids, ids.length > 1 ? t(`${ids.length} transcriptions prêtes`, `${ids.length} transcripts ready`) : t("Transcription prête", "Transcript ready"));
     });
 
   const AsrMissing = () => {
@@ -445,7 +470,7 @@ export function ImportSheet() {
           <button className="btn ghost" onClick={() => setPreview(null)}>
             {t("Retour", "Back")}
           </button>
-          <button className="btn primary" onClick={() => run(t("Création", "Creating"), async () => finish(await create([preview]), t("Leçon créée", "Lesson created")))}>
+          <button className="btn primary" onClick={() => run(t("Création", "Creating"), async () => await finish(await create([preview]), t("Leçon créée", "Lesson created")))}>
             {t("Créer la leçon", "Create the lesson")}
           </button>
         </>
@@ -485,6 +510,13 @@ export function ImportSheet() {
 
   return (
     <Sheet open={open} onClose={() => !busy && close()} title={t(`Importer ${inLang(lang)}`, `Import ${inLang(lang)}`)} footer={footer}>
+      {targetPlaylist && (
+        <div className="import-destination">
+          <Icon name="playlist" size={16} />
+          <span>{t("Ajouté directement à", "Adding directly to")}</span>
+          <strong>{targetPlaylist.name}</strong>
+        </div>
+      )}
       {!busy && (
         <div className="import-tabs" role="tablist">
           {tabs().map((tb) => (

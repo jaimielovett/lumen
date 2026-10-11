@@ -1029,6 +1029,28 @@
   flex-direction: column;
   gap: 14px;
 }
+.import-destination {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--light-veil);
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.import-destination .icon {
+  color: var(--light-strong);
+}
+.import-destination strong {
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .import-row {
   display: flex;
   gap: 10px;

@@ -111,6 +111,8 @@ interface AppStore {
   importUrl: string | null;
   /** onglet sur lequel la feuille d'import s'ouvre (null : celui d'habitude) */
   importTab: ImportTab | null;
+  /** playlist qui recevra les leçons créées par cette importation */
+  importPlaylistId: number | null;
   toasts: Toast[];
   models: ModelRow[];
   downloads: Record<string, DownloadState>;
@@ -151,7 +153,7 @@ interface AppStore {
   openLesson(id: number, opts?: { playlist?: number; autoplay?: boolean }): void;
   /** oublie la leçon en cours si c'est celle-ci (supprimée) */
   forgetLesson(id: number): void;
-  openImport(files?: string[] | null, tab?: ImportTab): void;
+  openImport(files?: string[] | null, tab?: ImportTab, playlistId?: number | null): void;
   /** importe un élément de Découvrir : vidéo, épisode ou article */
   openImportItem(item: DiscoverItem): void;
   /** ouvre la feuille d'import sur un lien, déjà analysé */
@@ -185,6 +187,7 @@ export const useApp = create<AppStore>((set, get) => ({
   importItem: null,
   importUrl: null,
   importTab: null,
+  importPlaylistId: null,
   toasts: [],
   models: [],
   downloads: {},
@@ -321,20 +324,20 @@ export const useApp = create<AppStore>((set, get) => ({
     void get().setSetting("last_lesson", "");
   },
 
-  openImport(files = null, tab) {
-    set({ importOpen: true, importFiles: files, importItem: null, importUrl: null, importTab: tab ?? null });
+  openImport(files = null, tab, playlistId = null) {
+    set({ importOpen: true, importFiles: files, importItem: null, importUrl: null, importTab: tab ?? null, importPlaylistId: playlistId ?? null });
   },
 
   openImportItem(item) {
-    set({ importOpen: true, importFiles: null, importItem: item, importUrl: null, importTab: null });
+    set({ importOpen: true, importFiles: null, importItem: item, importUrl: null, importTab: null, importPlaylistId: null });
   },
 
   openImportLink(url) {
-    set({ importOpen: true, importFiles: null, importItem: null, importUrl: url, importTab: null });
+    set({ importOpen: true, importFiles: null, importItem: null, importUrl: url, importTab: null, importPlaylistId: null });
   },
 
   closeImport() {
-    set({ importOpen: false, importFiles: null, importItem: null, importUrl: null, importTab: null });
+    set({ importOpen: false, importFiles: null, importItem: null, importUrl: null, importTab: null, importPlaylistId: null });
   },
 
   toast(text, kind = "info", action) {
