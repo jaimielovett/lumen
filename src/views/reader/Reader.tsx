@@ -314,12 +314,16 @@ export function Reader() {
     const height = view.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
     const line = look.size * look.lineHeight;
     // zone cachée (plein écran vidéo) ou minuscule : les pages d'avant restent
-    if (height < line * 2 || box.clientWidth < 60) return;
+    if (height < line || box.clientWidth < 60) return;
     lastFit.current = { w: view.clientWidth, h: view.clientHeight };
     const fit = () => {
-      // la première page porte le titre de la leçon
-      const head = ghostRef.current?.offsetHeight ?? 0;
-      const next = fitPages(box, tokens, { height, first: Math.max(line * 2, height - head), line });
+      // La première page porte le titre de la leçon. offsetHeight ne compte
+      // pas la marge basse du titre : l'oublier faisait déborder les derniers
+      // mots, surtout quand une grande vidéo réduisait la place disponible.
+      const headEl = ghostRef.current?.firstElementChild as HTMLElement | null;
+      const head = (ghostRef.current?.offsetHeight ?? 0) + (headEl ? parseFloat(getComputedStyle(headEl).marginBottom) || 0 : 0);
+      const first = Math.max(0, height - head);
+      const next = fitPages(box, tokens, { height, first, line });
       setFitted((prev) => (prev && prev.tokens === tokens && samePages(prev.pages, next) ? prev : { tokens, pages: next }));
     };
     // très longue leçon (chapitre de livre) déjà composée : le texte change de taille tout de suite,
