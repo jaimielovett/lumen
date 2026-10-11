@@ -98,7 +98,7 @@ export function WordPanel({ lang, sel, term, onStatus, onTranslation, onSelectPh
     if (dictLookable(lang, sel)) {
       // la suite de la phrase : le mot japonais ou vietnamien qui commence ici
       api()
-        .dictLookup(lang, sel.surface, sel.after)
+        .dictLookup(lang, sel.surface, sel.before, sel.after)
         .then((d) => id === reqId.current && setDict(d))
         .catch(() => {});
     }
@@ -173,7 +173,7 @@ export function WordPanel({ lang, sel, term, onStatus, onTranslation, onSelectPh
       .dictListen((l) => {
         if (l !== lang || id !== reqId.current) return;
         api()
-          .dictLookup(lang, sel.surface, sel.after)
+          .dictLookup(lang, sel.surface, sel.before, sel.after)
           .then((d) => id === reqId.current && setDict({ ...d, pending: false }))
           .catch(() => {});
       })

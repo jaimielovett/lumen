@@ -759,7 +759,7 @@ export function createMockApi(): Api {
       return reached;
     },
     async exportVocab() {},
-    async dictLookup(lang, word) {
+    async dictLookup(lang, word, _before, _after) {
       await sleep(30);
       const st = dictState(lang);
       if (st.exists && !st.ready) {

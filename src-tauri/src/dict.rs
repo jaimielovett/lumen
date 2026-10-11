@@ -310,14 +310,14 @@ impl Dicts {
     }
 
     pub fn lookup_in(&self, native: &str, lang: &str, surface: &str) -> Result<DictResult> {
-        self.lookup_ctx(native, lang, surface, "")
+        self.lookup_ctx(native, lang, surface, "", "")
     }
 
-    /// Recherche d'un mot. `after`, la suite de la phrase, sert aux langues dont les mots
-    /// s'étendent sur plusieurs jetons : le japonais (découpé caractère par caractère) et le
-    /// vietnamien (syllabe par syllabe). Le plus long mot du dictionnaire qui commence au mot
-    /// touché vient en premier, puis le mot lui-même (le kanji, la syllabe).
-    pub fn lookup_ctx(&self, native: &str, lang: &str, surface: &str, after: &str) -> Result<DictResult> {
+    /// Recherche d'un mot avec son contexte immédiat. `before` et `after` désambiguïsent les
+    /// homonymes japonais ; `after` sert aussi aux langues dont les mots s'étendent sur plusieurs
+    /// jetons. Le plus long mot du dictionnaire qui commence au mot touché vient en premier,
+    /// puis le mot lui-même (le kanji, la syllabe).
+    pub fn lookup_ctx(&self, native: &str, lang: &str, surface: &str, before: &str, after: &str) -> Result<DictResult> {
         let surface = surface.trim();
         if surface.is_empty() {
             return Ok(DictResult::default());
@@ -334,6 +334,9 @@ impl Dicts {
                 }
             }
             let mut own = d.find_with_variants(native, lang, surface)?;
+            if lang == "ja" {
+                rank_japanese_context(&mut own.entries, surface, before, after);
+            }
             if lang == "ja" && d.v2 && surface.chars().count() == 1 {
                 // sens et lectures du kanji, juste après le premier mot
                 let kanji = d.entries(&d.key(surface, lang), true)?;
@@ -604,7 +607,9 @@ fn entry_row(r: &rusqlite::Row) -> rusqlite::Result<DictEntry> {
 }
 
 fn entries_by(c: &Connection, col: &str, val: &str) -> Result<Vec<DictEntry>> {
-    let sql = format!("SELECT word,pos,ipa,gloss FROM entries WHERE {col}=?1 ORDER BY rank LIMIT 3");
+    // Keep enough Japanese homonyms for contextual ranking before the UI trims
+    // the displayed senses to four.
+    let sql = format!("SELECT word,pos,ipa,gloss FROM entries WHERE {col}=?1 ORDER BY rank LIMIT 8");
     let mut st = c.prepare_cached(&sql)?;
     let rows = st.query_map([val], entry_row)?;
     let mut out: Vec<DictEntry> = Vec::new();
@@ -615,6 +620,50 @@ fn entries_by(c: &Connection, col: &str, val: &str) -> Result<Vec<DictEntry>> {
         }
     }
     Ok(out)
+}
+
+fn rank_japanese_context(entries: &mut [DictEntry], surface: &str, before: &str, after: &str) {
+    if surface != "よる" || entries.is_empty() {
+        return;
+    }
+
+    let before = before.trim_end();
+    let after = after.trim_start();
+    let noun_context = after.starts_with("です")
+        || after.starts_with("でした")
+        || after.starts_with("だ")
+        || after.starts_with("だった")
+        || after.starts_with("の");
+    let verb_context = before.ends_with('に')
+        && (after.is_empty() || after.chars().next().is_some_and(|c| !is_kana(c) && !c.is_alphanumeric()));
+
+    if !noun_context && !verb_context {
+        return;
+    }
+
+    if noun_context {
+        if let Some(night) = entries.iter_mut().find(|entry| entry.word == "夜") {
+            let pos = night.pos.to_lowercase();
+            if pos.contains("adverb") || pos.contains("adverbe") {
+                night.pos = if pos.contains("adverbe") { "Nom".into() } else { "Noun".into() };
+            }
+        }
+    }
+
+    entries.sort_by_key(|entry| {
+        let pos = entry.pos.to_lowercase();
+        let is_noun = pos.contains("noun") || pos.contains("nom");
+        let is_verb = pos.contains("verb") || pos.contains("verbe");
+        let exact_night = entry.word == "夜";
+        let exact_verb = matches!(entry.word.as_str(), "寄る" | "因る" | "依る");
+        if noun_context {
+            (!exact_night, !is_noun, !is_verb)
+        } else if verb_context {
+            (!exact_verb, !is_verb, !is_noun)
+        } else {
+            (false, false, false)
+        }
+    });
 }
 
 fn is_kana(c: char) -> bool {
@@ -1231,18 +1280,34 @@ mod tests {
         let r = d.lookup_in("en", "ar", "والكتاب").unwrap();
         assert!(gloss(&r, "book"), "{r:?}");
         // japonais : le mot qui commence au caractère touché, conjugué, puis le kanji
-        let r = d.lookup_ctx("fr", "ja", "見", "つけなかった。").unwrap();
+        let r = d.lookup_ctx("fr", "ja", "見", "", "つけなかった。").unwrap();
         assert_eq!(r.lemma.as_deref(), Some("見つける"), "{r:?}");
         assert!(gloss(&r, "trouver"), "{r:?}");
         assert_eq!(r.entries[1].pos, "Kanji", "{r:?}");
-        let r = d.lookup_ctx("en", "ja", "家", "に帰る").unwrap();
+        let r = d.lookup_ctx("en", "ja", "家", "", "に帰る").unwrap();
         assert!(gloss(&r, "house"), "{r:?}");
         // vietnamien : le mot de deux syllabes d'abord
-        let r = d.lookup_ctx("fr", "vi", "học", "sinh giỏi").unwrap();
+        let r = d.lookup_ctx("fr", "vi", "học", "", "sinh giỏi").unwrap();
         assert_eq!(r.entries[0].word, "học sinh", "{r:?}");
         // grec : un texte en capitales n'a pas d'accents
         let r = d.lookup_in("fr", "el", "ΣΠΙΤΙ").unwrap();
         assert!(gloss(&r, "maison"), "{r:?}");
         let _ = std::fs::remove_dir_all(tmp);
+    }
+
+    #[test]
+    fn japanese_homonyms_follow_sentence_context() {
+        let mut entries = vec![
+            DictEntry { word: "預流".into(), pos: "Noun".into(), ipa: "よる".into(), glosses: vec![] },
+            DictEntry { word: "寄る".into(), pos: "Verb (godan)".into(), ipa: "".into(), glosses: vec![] },
+            DictEntry { word: "夜".into(), pos: "Adverb".into(), ipa: "".into(), glosses: vec![] },
+        ];
+
+        rank_japanese_context(&mut entries, "よる", "", "です。");
+        assert_eq!(entries[0].word, "夜");
+        assert_eq!(entries[0].pos, "Noun");
+
+        rank_japanese_context(&mut entries, "よる", "駅に", "。");
+        assert_eq!(entries[0].word, "寄る");
     }
 }

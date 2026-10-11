@@ -2497,6 +2497,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-process",
  "tauri-plugin-updater",
+ "tiniestsegmenter",
  "tokio",
  "unicode-normalization",
  "unicode-segmentation",
@@ -5029,6 +5030,12 @@ dependencies = [
  "num-conv",
  "time-core",
 ]
+
+[[package]]
+name = "tiniestsegmenter"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f39721481fb54f0e9f3a1da5a6ac6063c61ec62ec828cd5e1860acce9458f40"
 
 [[package]]
 name = "tinystr"

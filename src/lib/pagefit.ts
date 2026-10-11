@@ -67,6 +67,13 @@ export function fitPages(box: HTMLElement, tokens: Token[], opts: FitOptions): P
   let chunk = 600;
   while (start < n) {
     const height = pages.length ? opts.height : opts.first;
+    // A large lesson title (often below a video) can leave less than one
+    // readable line on the first page. Keep that page as a clean title page
+    // instead of counting text that would sit underneath the footer.
+    if (!pages.length && height < opts.line) {
+      pages.push({ start, end: start, words: 0 });
+      continue;
+    }
     let end = -1;
     // le morceau composé doit dépasser la page : sinon on l'agrandit
     for (;;) {

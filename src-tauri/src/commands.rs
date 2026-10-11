@@ -276,9 +276,17 @@ pub async fn dict_status(app: tauri::AppHandle, state: State<'_, AppState>, lang
     Ok(state.dicts.status(&lang))
 }
 
-/// `after` : la suite de la phrase, pour le japonais et le vietnamien (mots de plusieurs jetons).
+/// `before`/`after` : le contexte immédiat, pour désambiguïser le japonais ; `after` sert aussi
+/// à retrouver les mots japonais et vietnamiens qui s'étendent sur plusieurs jetons.
 #[tauri::command]
-pub async fn dict_lookup(app: tauri::AppHandle, state: State<'_, AppState>, lang: String, word: String, after: Option<String>) -> R<DictResult> {
+pub async fn dict_lookup(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    lang: String,
+    word: String,
+    before: Option<String>,
+    after: Option<String>,
+) -> R<DictResult> {
     if state.dicts.missing(&lang) {
         fetch_dict(&app, &lang);
         return Ok(DictResult { pending: true, ..Default::default() });
@@ -286,7 +294,10 @@ pub async fn dict_lookup(app: tauri::AppHandle, state: State<'_, AppState>, lang
     if !state.dicts.available(&lang) {
         return Ok(DictResult::default());
     }
-    state.dicts.lookup_ctx(i18n::native(), &lang, &word, after.as_deref().unwrap_or("")).map_err(err)
+    state
+        .dicts
+        .lookup_ctx(i18n::native(), &lang, &word, before.as_deref().unwrap_or(""), after.as_deref().unwrap_or(""))
+        .map_err(err)
 }
 
 // ---------- IA (sur ce Mac ou en ligne) ----------
@@ -400,7 +411,7 @@ pub async fn ai_word(
     let brain = brain(&state, online::Role::Words)?;
     // traductions en français (clé d'origine) ou en anglais (clé à part)
     let native = i18n::native();
-    let version = if native == "en" { "w4en" } else { "w4" };
+    let version = if native == "en" { "w5en" } else { "w5" };
     let normalized = text::normalize_for(&word, &lang);
     let key_of = |b: &Brain| hash(&[version, &b.id(), &lang, &normalized, sentence.trim()]);
     if let Some(v) = db::cache_get(&state.db.lock(), &key_of(&brain)) {

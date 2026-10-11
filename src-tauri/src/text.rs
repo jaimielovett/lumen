@@ -97,6 +97,118 @@ fn splits_elision(lang: &str) -> bool {
     matches!(lang, "it" | "fr" | "pt" | "ca")
 }
 
+fn japanese_word_piece(piece: &str) -> bool {
+    piece.chars().any(|c| {
+        matches!(
+            c,
+            '\u{3040}'..='\u{309f}'
+                | '\u{30a0}'..='\u{30ff}'
+                | '\u{3400}'..='\u{4dbf}'
+                | '\u{4e00}'..='\u{9fff}'
+                | '\u{f900}'..='\u{faff}'
+        )
+    })
+}
+
+/// TinySegmenter intentionally exposes some inflection boundaries (for
+/// example `見` + `た`). Lumen's learner-facing words should remain useful
+/// tap targets, so keep common Japanese inflections with their stem.
+fn japanese_inflection(piece: &str) -> bool {
+    matches!(
+        piece,
+        "い"
+            | "かっ"
+            | "き"
+            | "く"
+            | "け"
+            | "げ"
+            | "さ"
+            | "し"
+            | "す"
+            | "せ"
+            | "そ"
+            | "た"
+            | "だ"
+            | "ち"
+            | "っ"
+            | "つ"
+            | "て"
+            | "で"
+            | "と"
+            | "な"
+            | "ない"
+            | "なく"
+            | "なかっ"
+            | "に"
+            | "ぬ"
+            | "ね"
+            | "の"
+            | "は"
+            | "ひ"
+            | "ふ"
+            | "へ"
+            | "ほ"
+            | "まし"
+            | "ませ"
+            | "ました"
+            | "ません"
+            | "み"
+            | "む"
+            | "め"
+            | "も"
+            | "や"
+            | "ゆ"
+            | "よ"
+            | "ら"
+            | "り"
+            | "る"
+            | "れ"
+            | "ろ"
+            | "わ"
+            | "ん"
+            | "れる"
+            | "られ"
+            | "れば"
+            | "ろう"
+            | "たい"
+            | "たく"
+            | "てい"
+            | "てく"
+            | "でし"
+    )
+}
+
+fn japanese_hiragana_word(piece: &str) -> bool {
+    !piece.is_empty() && piece.chars().all(|c| matches!(c, '\u{3040}'..='\u{309f}'))
+}
+
+fn japanese_tokens(text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for piece in tiniestsegmenter::tokenize(text) {
+        let Some(previous) = out.last_mut() else {
+            out.push(piece.to_string());
+            continue;
+        };
+
+        let attach_adverbial_ni = piece == "に"
+            && japanese_hiragana_word(previous)
+            && previous.chars().count() > 1
+            && previous.ends_with('い');
+        let attach_inflection = japanese_inflection(piece)
+            && !matches!(piece, "に" | "の" | "は" | "が" | "を" | "で" | "と" | "も");
+
+        if japanese_word_piece(previous)
+            && japanese_word_piece(piece)
+            && (attach_inflection || attach_adverbial_ni)
+        {
+            previous.push_str(piece);
+        } else {
+            out.push(piece.to_string());
+        }
+    }
+    out
+}
+
 pub fn tokenize(text: &str, lang: &str) -> Vec<Token> {
     let mut out = Vec::new();
     let mut utf16_pos = 0usize;
@@ -112,6 +224,17 @@ pub fn tokenize(text: &str, lang: &str) -> Vec<Token> {
         });
         *pos += len16;
     };
+
+    // Japanese does not put spaces between words. Unicode word boundaries
+    // therefore fall back to one token per character; use the same compact
+    // TinySegmenter-style lexical tokenizer as Komichi instead.
+    if lang == "ja" {
+        for piece in japanese_tokens(text) {
+            push(&piece, &mut out, &mut utf16_pos);
+        }
+        return out;
+    }
+
     for piece in text.split_word_bounds() {
         if splits_elision(lang) && is_learnable(piece) {
             if let Some(idx) = piece.find(|c| c == '\'' || c == '’') {
@@ -183,5 +306,30 @@ mod tests {
         let last = toks.last().unwrap();
         assert_eq!(last.t, "ok");
         assert_eq!(last.s, 9);
+    }
+
+    #[test]
+    fn japanese_uses_lexical_words() {
+        let tokens: Vec<_> = tokenize("毎朝、海を見た。手紙を見つけた。", "ja")
+            .into_iter()
+            .filter(|t| t.w)
+            .map(|t| t.t)
+            .collect();
+        assert_eq!(tokens, ["毎朝", "海", "を", "見た", "手紙", "を", "見つけた"]);
+
+        let tokens: Vec<_> = tokenize("にわのコスモスが、きれいにさきました。", "ja")
+            .into_iter()
+            .filter(|t| t.w)
+            .map(|t| t.t)
+            .collect();
+        assert_eq!(tokens, ["にわ", "の", "コスモス", "が", "きれいに", "さきました"]);
+    }
+
+    #[test]
+    fn japanese_offsets_stay_utf16() {
+        let tokens = tokenize("日本語 😀 を読む", "ja");
+        let last = tokens.iter().find(|token| token.t == "読む").unwrap();
+        assert_eq!(last.s, "日本語 😀 を".encode_utf16().count());
+        assert_eq!(last.e - last.s, "読む".encode_utf16().count());
     }
 }

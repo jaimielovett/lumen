@@ -603,9 +603,9 @@ pub const SYSTEM: &str = "Tu es le moteur de traduction de Lumen, une applicatio
 // Les consignes existent pour un apprenant francophone (`native` = "fr") et
 // anglophone ("en") ; les versions françaises sont celles qui ont été éprouvées.
 
-const WORD_SYSTEM: &str = "Tu es un dictionnaire bilingue pour apprenants francophones. On te donne une phrase étrangère et un mot ou une expression de cette phrase. Les entrées du dictionnaire sont des candidats autoritaires et indiquent parfois la catégorie grammaticale : identifie d'abord le rôle du mot dans la phrase, puis choisis uniquement un sens compatible avec ce rôle. Ne choisis jamais un sens verbal pour un nom, ni un sens nominal pour un verbe. Pour le tagalog, `tuwing` introduit une fréquence ou un moment ; dans `tuwing umaga`, `umaga` est donc le nom « morning », pas le verbe « to be early ». Tu réponds sur deux lignes exactement :\nSens : la traduction française du mot dans cette phrase précise, accordée au contexte (1 à 5 mots, jamais le mot original recopié)\nNote : seulement s'il s'agit d'une expression figée, d'un faux ami ou d'un sens inattendu ; sinon écris -";
+const WORD_SYSTEM: &str = "Tu es un dictionnaire bilingue pour apprenants francophones. On te donne une phrase étrangère et un mot ou une expression de cette phrase. Les entrées du dictionnaire sont des candidats autoritaires et indiquent parfois la catégorie grammaticale : identifie d'abord le rôle du mot dans la phrase, puis choisis uniquement un sens compatible avec ce rôle. Ne choisis jamais un sens verbal pour un nom, ni un sens nominal pour un verbe. Pour le tagalog, `tuwing` introduit une fréquence ou un moment ; dans `tuwing umaga`, `umaga` est donc le nom « morning », pas le verbe « to be early ». Tu réponds sur deux lignes exactement :\nSens : la traduction française du mot dans cette phrase précise, accordée au contexte (1 à 5 mots, jamais le mot original recopié ; ne réponds jamais « - »)\nNote : seulement s'il s'agit d'une expression figée, d'un faux ami ou d'un sens inattendu ; sinon écris -";
 
-const WORD_SYSTEM_EN: &str = "You are a bilingual dictionary for English-speaking learners. You are given a foreign sentence and a word or expression from that sentence. The dictionary entries are authoritative candidates and may include part-of-speech labels: first identify the word's grammatical role in the sentence, then choose only a sense compatible with that role. Never choose a verb sense for a noun, or a noun sense for a verb. For Tagalog, `tuwing` introduces a recurring time or occasion; in `tuwing umaga`, `umaga` is the noun `morning`, not the verb `to be early`. You answer in exactly two lines:\nMeaning: the English translation of the word in this precise sentence, matching the context (1 to 5 words, never the original word copied)\nNote: only if it is a fixed expression, a false friend or an unexpected meaning; otherwise write -";
+const WORD_SYSTEM_EN: &str = "You are a bilingual dictionary for English-speaking learners. You are given a foreign sentence and a word or expression from that sentence. The dictionary entries are authoritative candidates and may include part-of-speech labels: first identify the word's grammatical role in the sentence, then choose only a sense compatible with that role. Never choose a verb sense for a noun, or a noun sense for a verb. For Tagalog, `tuwing` introduces a recurring time or occasion; in `tuwing umaga`, `umaga` is the noun `morning`, not the verb `to be early`. You answer in exactly two lines:\nMeaning: the English translation of the word in this precise sentence, matching the context (1 to 5 words, never the original word copied; never answer `-`)\nNote: only if it is a fixed expression, a false friend or an unexpected meaning; otherwise write -";
 
 fn word_query(lang: &str, word: &str, sentence: &str, hint: &str) -> String {
     let mut q = format!("Langue : {}\nPhrase : {sentence}\nMot : {word}", lang_name(lang));
@@ -1179,8 +1179,11 @@ pub fn parse_word_answer(raw: &str) -> (String, String) {
         }
         t.trim_end_matches('.').trim().to_string()
     };
-    let sense = strip(sense);
+    let mut sense = strip(sense);
     let mut note = strip(note);
+    if matches!(sense.as_str(), "-" | "–" | "—") || sense.eq_ignore_ascii_case("none") {
+        sense.clear();
+    }
     let lower = note.to_lowercase();
     if note == "-" || note == "–" || lower.starts_with("rien") || lower.starts_with("none") || note.chars().count() < 3 {
         note.clear();
@@ -1206,6 +1209,9 @@ mod tests {
         let (s, n) = parse_word_answer("Sens: phare\nNote: -");
         assert_eq!(s, "phare");
         assert_eq!(n, "");
+        let (s, n) = parse_word_answer("Meaning: -\nNote: wrong part of speech");
+        assert_eq!(s, "");
+        assert_eq!(n, "wrong part of speech");
     }
 
     #[test]

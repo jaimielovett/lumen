@@ -47,8 +47,8 @@ export interface Api {
   /** mots lus, écoute et temps actif dans une leçon ; renvoie la série si l'objectif du jour vient d'être atteint */
   activityAdd(lang: LangCode, wordsRead: number, listenSecs: number, learnSecs?: number): Promise<GoalReached | null>;
   exportVocab(lang: LangCode, path: string): Promise<void>;
-  /** `after` : la suite de la phrase (japonais, vietnamien : mots de plusieurs jetons) */
-  dictLookup(lang: LangCode, word: string, after?: string): Promise<DictResult>;
+  /** Contexte immédiat pour désambiguïser le japonais et retrouver les mots longs. */
+  dictLookup(lang: LangCode, word: string, before?: string, after?: string): Promise<DictResult>;
   /** état du dictionnaire de la langue (le télécharge s'il manque) */
   dictStatus(lang: LangCode): Promise<DictStatus>;
   /** un dictionnaire vient d'arriver (ou son téléchargement a échoué) */
@@ -176,7 +176,7 @@ async function createTauriApi(): Promise<Api> {
     stats: (lang) => invoke("stats", { lang }),
     activityAdd: (lang, wordsRead, listenSecs, learnSecs = 0) => invoke("activity_add", { lang, wordsRead, listenSecs, learnSecs }),
     exportVocab: (lang, path) => invoke("export_vocab", { lang, path }),
-    dictLookup: (lang, word, after) => invoke("dict_lookup", { lang, word, after: after ?? null }),
+    dictLookup: (lang, word, before, after) => invoke("dict_lookup", { lang, word, before: before ?? null, after: after ?? null }),
     dictStatus: (lang) => invoke("dict_status", { lang }),
     dictListen: async (onChange) => {
       const { listen } = await import("@tauri-apps/api/event");
