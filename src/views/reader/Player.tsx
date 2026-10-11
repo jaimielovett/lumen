@@ -76,7 +76,7 @@ function MakeAudio({ lesson, again, onVoiced }: { lesson: Lesson; again?: boolea
           : t("La voix naturelle se télécharge (149 Mo). Vous pourrez ensuite créer l'audio d'un clic.", "The natural voice is downloading (149 MB). Then you can create the audio in one click."),
         "light",
       );
-      void useApp.getState().download(VOICE_MODEL);
+      if (lesson.lang !== "tl") void useApp.getState().download(VOICE_MODEL);
       return;
     }
     if (

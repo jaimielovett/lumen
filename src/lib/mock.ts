@@ -261,7 +261,7 @@ export function createMockApi(): Api {
     { id: "qwen3-asr-1.7b", kind: "asrtext", name: "Qwen3-ASR 1.7B", get detail() { return t("Texte des transcriptions plus juste que Whisper, sans phrase sautée, dans 23 langues ; Whisper garde le minutage des mots", "More accurate transcripts than Whisper, with no skipped sentences, in 23 languages; Whisper still times the words"); }, size: 2520744288, url: "", file: "", ram_gb: 16 },
     { id: "whisper-small", kind: "asr", name: "Whisper Small", get detail() { return t("Transcription légère et rapide", "Light and fast transcription"); }, size: 190e6, url: "", file: "", ram_gb: 8 },
     { id: "whisper-turbo", kind: "asr", name: "Whisper Large v3 Turbo", get detail() { return t("Transcription et minutage des mots, très précis, 99 langues", "Transcription and word timing, very precise, 99 languages"); }, size: 574e6, url: "", file: "", ram_gb: 8 },
-    { id: "supertonic-3", kind: "tts", name: "Supertonic 3", get detail() { return t("Voix naturelle pour les mots, les expressions et l'audio des leçons, dans les 31 langues", "Natural voice for words, phrases and lesson audio, in all 31 languages"); }, size: 149e6, url: "", file: "", ram_gb: 8 },
+    { id: "supertonic-3", kind: "tts", name: "Supertonic 3", get detail() { return t("Voix naturelle pour les mots, les expressions et l'audio des leçons, dans les 31 langues ; le tagalog utilise Google Cloud", "Natural voice for words, phrases and lesson audio, in 31 languages; Tagalog uses Google Cloud"); }, size: 149e6, url: "", file: "", ram_gb: 8 },
   ];
 
   // miroir de new_share (db.rs)

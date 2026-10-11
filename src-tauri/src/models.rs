@@ -121,8 +121,8 @@ pub const CATALOG: &[ModelInfo] = &[
         id: "supertonic-3",
         kind: "tts",
         name: "Supertonic 3",
-        detail: "Voix naturelle pour les mots, les expressions et l'audio des leçons, dans les 31 langues",
-        detail_en: "Natural voice for words, phrases and lesson audio, in all 31 languages",
+        detail: "Voix naturelle pour les mots, les expressions et l'audio des leçons, dans 31 langues ; le tagalog utilise Google Cloud",
+        detail_en: "Natural voice for words, phrases and lesson audio, in 31 languages; Tagalog uses Google Cloud",
         // modèle (128,8 Mo) + moteur sherpa-onnx (20,3 Mo), téléchargés ensemble
         size: 128_774_318 + crate::voice::ENGINE_SIZE,
         url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/sherpa-onnx-supertonic-3-tts-int8-2026-05-11.tar.bz2",

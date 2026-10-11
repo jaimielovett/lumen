@@ -106,8 +106,8 @@ const groups = (): { title: string | null; tabs: Tab[] }[] => [
         icon: "speaker",
         label: t("Voix", "Voice"),
         lead: t(
-          "La voix naturelle prononce les mots que vous touchez et lit vos leçons de texte. Les voix du système lisent à voix haute sans préparation.",
-          "The natural voice pronounces the words you tap and reads your text lessons. The system voices read aloud with no preparation.",
+          "La voix naturelle prononce les mots que vous touchez et lit vos leçons de texte. Le tagalog peut utiliser Google Cloud ; les voix du système lisent à voix haute sans préparation.",
+          "The natural voice pronounces the words you tap and reads your text lessons. Tagalog can use Google Cloud; system voices read aloud with no preparation.",
         ),
         keys: "voix naturelle supertonic systeme lecture a voix haute prononciation audio natural voice system read aloud pronunciation speech",
       },
@@ -609,7 +609,13 @@ function LangsPane() {
           })}
         </div>
       </Section>
-      <Section title={t("Ajouter une langue", "Add a language")} note={t(`${LANGS.length} langues, chacune avec son dictionnaire hors ligne et sa voix naturelle.`, `${LANGS.length} languages, each with its offline dictionary and natural voice.`)}>
+      <Section
+        title={t("Ajouter une langue", "Add a language")}
+        note={t(
+          `${LANGS.length} langues, chacune avec son dictionnaire hors ligne ; le tagalog utilise Google Cloud pour sa voix naturelle.`,
+          `${LANGS.length} languages, each with an offline dictionary; Tagalog uses Google Cloud for its natural voice.`,
+        )}
+      >
         <div className="lang-chips">
           {LANGS.filter((l) => !langs.includes(l.code)).map((l) => (
             <button key={l.code} className="lang-chip" onClick={() => toggleLang(l.code)} title={`${l.name} · ${l.native}`}>
@@ -871,6 +877,7 @@ function VoicePane() {
   const setSetting = useApp((s) => s.setSetting);
   const models = useApp((s) => s.models);
   const lang = useApp((s) => s.lang)();
+  const localNatural = lang !== "tl";
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const voiceKey = `voice_${lang}`;
 
@@ -888,19 +895,22 @@ function VoicePane() {
         )}
       >
         <div className="set-card">
-          <div className="set-row">
-            <div className="grow">
-              <strong>{t("Voix tagalog en ligne · Google Cloud", "Online Tagalog voice · Google Cloud")}</strong>
-              <span>{t("Voix Neural2 naturelle pour le tagalog. Elle est utilisée automatiquement pour les mots et les leçons tagalog quand la clé est vérifiée.", "Natural Neural2 voice for Tagalog. It is used automatically for Tagalog words and lessons when the key is verified.")}</span>
-            </div>
-          </div>
-          <div className="set-row"><GoogleTtsKey /></div>
-          {models
-            .filter((m) => m.kind === "tts")
-            .map((m) => (
-              <ModelLine key={m.id} m={m} />
-            ))}
-          {models.some((m) => m.kind === "tts" && m.installed) && (
+          {lang === "tl" && (
+            <>
+              <div className="set-row">
+                <div className="grow">
+                  <strong>{t("Voix tagalog en ligne · Google Cloud", "Online Tagalog voice · Google Cloud")}</strong>
+                  <span>{t("Voix Neural2 naturelle pour le tagalog. Elle est utilisée automatiquement pour les mots et les leçons tagalog quand la clé est vérifiée.", "Natural Neural2 voice for Tagalog. It is used automatically for Tagalog words and lessons when the key is verified.")}</span>
+                </div>
+              </div>
+              <div className="set-row"><GoogleTtsKey /></div>
+            </>
+          )}
+          {localNatural &&
+            models
+              .filter((m) => m.kind === "tts")
+              .map((m) => <ModelLine key={m.id} m={m} />)}
+          {localNatural && models.some((m) => m.kind === "tts" && m.installed) && (
             <div className="set-row">
               <div className="grow">
                 <strong>{t(`Voix pour ${theLang(lang)}`, `Voice for ${theLang(lang)}`)}</strong>

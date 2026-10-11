@@ -25,7 +25,7 @@ const DICT_VERSION: &str = "1";
 /// Définitions en français livrées avec l'application.
 const BUNDLED_FR: &[&str] = &["en", "es", "it", "de", "pt", "ru"];
 const BUNDLED_EN: &[&str] = &["tl"];
-/// Les 24 autres langues de Lumen : dictionnaires du format 2, en français et en anglais.
+/// Les autres langues de Lumen : dictionnaires du format 2, en français et en anglais.
 pub const V2_LANGS: &[&str] = &[
     "nl", "sv", "da", "fi", "et", "lv", "lt", "pl", "cs", "sk", "sl", "hr", "hu", "ro", "bg", "uk", "el", "tr", "ar", "hi", "id", "vi", "ko", "ja", "tl",
 ];

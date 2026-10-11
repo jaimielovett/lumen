@@ -1,5 +1,5 @@
 //! Voix naturelle pour prononcer un mot ou une expression : Supertonic 3
-//! (modèle neuronal, 31 langues dont les six de Lumen), exécuté par l'outil
+//! (modèle neuronal, 31 langues), exécuté par l'outil
 //! officiel de sherpa-onnx.
 //!
 //! Le moteur (~30 Mo) et le modèle (~130 Mo) se téléchargent à part, comme les

@@ -1,7 +1,7 @@
-// Prononciation d'un mot ou d'une expression : la voix naturelle locale
-// (Supertonic, calculée sur le Mac) si elle est installée, sinon la voix du
-// système. La voix naturelle ne tourne qu'à la demande ; chaque prononciation
-// est gardée en cache côté natif, et préparée dès qu'un mot est touché.
+// Prononciation d'un mot ou d'une expression : Supertonic sur le Mac, ou
+// Google Cloud pour le tagalog quand une clé est configurée ; sinon la voix
+// du système. La voix naturelle ne tourne qu'à la demande ; chaque
+// prononciation est gardée en cache côté natif, et préparée dès qu'un mot est touché.
 
 import { api, isTauri } from "./api";
 import { t } from "./i18n";
@@ -30,7 +30,7 @@ const PREPARE_MAX_WORDS = 12;
 const pending = new Map<string, Promise<string>>();
 let player: HTMLAudioElement | null = null;
 
-/** La voix naturelle est installée et utilisable. */
+/** Une voix naturelle est disponible pour cette langue. */
 export function naturalVoiceReady(lang?: string): boolean {
   const settings = useApp.getState().settings;
   const google = lang === "tl" && !!settings.google_tts_key?.trim();

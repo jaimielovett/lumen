@@ -595,7 +595,7 @@
 .ob-grid.profiles {
   grid-template-columns: repeat(3, 1fr);
 }
-/* 31 langues : les six plus étudiées en grand, les autres en cartes compactes,
+/* 32 langues : les six plus étudiées en grand, les autres en cartes compactes,
    dans une zone qui défile et s'estompe en haut et en bas */
 .ob-langs-scroll {
   width: min(940px, 100%);

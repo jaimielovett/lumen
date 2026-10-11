@@ -553,6 +553,7 @@ pub fn lang_name(code: &str) -> &'static str {
         "vi" => "vietnamien",
         "ko" => "coréen",
         "ja" => "japonais",
+        "tl" => "tagalog",
         "zh" => "chinois",
         _ => "étranger",
     }
@@ -592,6 +593,7 @@ pub fn lang_name_en(code: &str) -> &'static str {
         "vi" => "Vietnamese",
         "ko" => "Korean",
         "ja" => "Japanese",
+        "tl" => "Tagalog",
         "zh" => "Chinese",
         _ => "foreign",
     }
@@ -603,14 +605,28 @@ pub const SYSTEM: &str = "Tu es le moteur de traduction de Lumen, une applicatio
 // Les consignes existent pour un apprenant francophone (`native` = "fr") et
 // anglophone ("en") ; les versions françaises sont celles qui ont été éprouvées.
 
-const WORD_SYSTEM: &str = "Tu es un dictionnaire bilingue pour apprenants francophones. On te donne une phrase étrangère et un mot ou une expression de cette phrase. Les entrées du dictionnaire sont des candidats autoritaires et indiquent parfois la catégorie grammaticale : identifie d'abord le rôle du mot dans la phrase, puis choisis uniquement un sens compatible avec ce rôle. Ne choisis jamais un sens verbal pour un nom, ni un sens nominal pour un verbe. Pour le tagalog, `tuwing` introduit une fréquence ou un moment ; dans `tuwing umaga`, `umaga` est donc le nom « morning », pas le verbe « to be early ». Tu réponds sur deux lignes exactement :\nSens : la traduction française du mot dans cette phrase précise, accordée au contexte (1 à 5 mots, jamais le mot original recopié ; ne réponds jamais « - »)\nNote : seulement s'il s'agit d'une expression figée, d'un faux ami ou d'un sens inattendu ; sinon écris -";
+const WORD_SYSTEM: &str = "Tu es un dictionnaire bilingue pour apprenants francophones. On te donne une phrase étrangère et un mot ou une expression de cette phrase. Les entrées du dictionnaire sont des candidats autoritaires et indiquent parfois la catégorie grammaticale : identifie d'abord le rôle du mot dans la phrase, puis choisis uniquement un sens compatible avec ce rôle. Ne choisis jamais un sens verbal pour un nom, ni un sens nominal pour un verbe. Tu réponds sur deux lignes exactement :\nSens : la traduction française du mot dans cette phrase précise, accordée au contexte (1 à 5 mots, jamais le mot original recopié ; ne réponds jamais « - »)\nNote : seulement s'il s'agit d'une expression figée, d'un faux ami ou d'un sens inattendu ; sinon écris -";
 
-const WORD_SYSTEM_EN: &str = "You are a bilingual dictionary for English-speaking learners. You are given a foreign sentence and a word or expression from that sentence. The dictionary entries are authoritative candidates and may include part-of-speech labels: first identify the word's grammatical role in the sentence, then choose only a sense compatible with that role. Never choose a verb sense for a noun, or a noun sense for a verb. For Tagalog, `tuwing` introduces a recurring time or occasion; in `tuwing umaga`, `umaga` is the noun `morning`, not the verb `to be early`. You answer in exactly two lines:\nMeaning: the English translation of the word in this precise sentence, matching the context (1 to 5 words, never the original word copied; never answer `-`)\nNote: only if it is a fixed expression, a false friend or an unexpected meaning; otherwise write -";
+const WORD_SYSTEM_EN: &str = "You are a bilingual dictionary for English-speaking learners. You are given a foreign sentence and a word or expression from that sentence. The dictionary entries are authoritative candidates and may include part-of-speech labels: first identify the word's grammatical role in the sentence, then choose only a sense compatible with that role. Never choose a verb sense for a noun, or a noun sense for a verb. You answer in exactly two lines:\nMeaning: the English translation of the word in this precise sentence, matching the context (1 to 5 words, never the original word copied; never answer `-`)\nNote: only if it is a fixed expression, a false friend or an unexpected meaning; otherwise write -";
+
+fn tagalog_word_guidance(lang: &str, english: bool) -> Option<&'static str> {
+    if lang != "tl" {
+        return None;
+    }
+    Some(if english {
+        "`tuwing` introduces a recurring time or occasion; in `tuwing umaga`, `umaga` is the noun `morning`, not the verb `to be early`."
+    } else {
+        "`tuwing` introduit une fréquence ou un moment ; dans `tuwing umaga`, `umaga` est le nom « matin », pas le verbe « être matinal »."
+    })
+}
 
 fn word_query(lang: &str, word: &str, sentence: &str, hint: &str) -> String {
     let mut q = format!("Langue : {}\nPhrase : {sentence}\nMot : {word}", lang_name(lang));
     if !hint.is_empty() {
         q.push_str(&format!("\nDictionnaire : {hint}"));
+    }
+    if let Some(guidance) = tagalog_word_guidance(lang, false) {
+        q.push_str(&format!("\nRepère grammatical : {guidance}"));
     }
     q
 }
@@ -619,6 +635,9 @@ fn word_query_en(lang: &str, word: &str, sentence: &str, hint: &str) -> String {
     let mut q = format!("Language: {}\nSentence: {sentence}\nWord: {word}", lang_name_en(lang));
     if !hint.is_empty() {
         q.push_str(&format!("\nDictionary: {hint}"));
+    }
+    if let Some(guidance) = tagalog_word_guidance(lang, true) {
+        q.push_str(&format!("\nGrammar note: {guidance}"));
     }
     q
 }
@@ -1297,6 +1316,8 @@ mod tests {
         // mots et phrases
         let w = word_messages("en", "it", "andavo", "Quando ero piccolo andavo al mare.", "form of andare: to go");
         assert!(w[0].1.contains("English-speaking") && w.last().unwrap().1 == "Language: Italian\nSentence: Quando ero piccolo andavo al mare.\nWord: andavo\nDictionary: form of andare: to go");
+        let tl = word_messages("en", "tl", "umaga", "Tuwing umaga, umaakyat si Marta.", "noun: morning; verb: to be early");
+        assert!(tl.last().unwrap().1.contains("Language: Tagalog") && tl.last().unwrap().1.contains("Grammar note: `tuwing` introduces"));
         assert!(sentence_messages("en", "de", "Guten Morgen.").last().unwrap().1 == "Sentence in German: Guten Morgen.");
         assert!(simplify_messages("en", "es", "A2", "Hola.")[1].1.starts_with("Rewrite this text in Spanish for a learner at level A2"));
         let (s, n) = parse_word_answer("Meaning: was going\nNote: -");

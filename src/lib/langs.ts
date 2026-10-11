@@ -68,8 +68,7 @@ export function featuredLangs(): LangCode[] {
   return t("en it de pt ru es", "it de pt ru es fr").split(" ") as LangCode[];
 }
 
-/** Dictionnaire livré avec l'application (définitions en français de six langues) ; les
- *  autres se téléchargent au premier usage. */
+/** Dictionnaire livré avec l'application ; les autres se téléchargent au premier usage. */
 export function bundledDict(code: string): boolean {
   return t("en it de pt ru es tl", "it de pt ru es fr tl").split(" ").includes(code);
 }
