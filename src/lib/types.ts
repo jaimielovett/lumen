@@ -1,7 +1,7 @@
 export type LangCode =
   | "en" | "es" | "it" | "de" | "pt" | "ru"
   | "fr" | "nl" | "sv" | "da" | "fi" | "et" | "lv" | "lt" | "pl" | "cs" | "sk" | "sl" | "hr" | "hu" | "ro"
-  | "bg" | "uk" | "el" | "tr" | "ar" | "hi" | "id" | "vi" | "ko" | "ja";
+  | "bg" | "uk" | "el" | "tr" | "ar" | "hi" | "id" | "vi" | "ko" | "ja" | "tl";
 
 export interface Token {
   /** texte tel qu'il apparaît */

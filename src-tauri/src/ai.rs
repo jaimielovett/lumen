@@ -603,9 +603,9 @@ pub const SYSTEM: &str = "Tu es le moteur de traduction de Lumen, une applicatio
 // Les consignes existent pour un apprenant francophone (`native` = "fr") et
 // anglophone ("en") ; les versions françaises sont celles qui ont été éprouvées.
 
-const WORD_SYSTEM: &str = "Tu es un dictionnaire bilingue pour apprenants francophones. On te donne une phrase étrangère et un mot ou une expression de cette phrase. Tu réponds sur deux lignes exactement :\nSens : la traduction française du mot dans cette phrase précise, accordée au contexte (1 à 5 mots, jamais le mot original recopié)\nNote : seulement s'il s'agit d'une expression figée, d'un faux ami ou d'un sens inattendu ; sinon écris -";
+const WORD_SYSTEM: &str = "Tu es un dictionnaire bilingue pour apprenants francophones. On te donne une phrase étrangère et un mot ou une expression de cette phrase. Les entrées du dictionnaire sont des candidats autoritaires et indiquent parfois la catégorie grammaticale : identifie d'abord le rôle du mot dans la phrase, puis choisis uniquement un sens compatible avec ce rôle. Ne choisis jamais un sens verbal pour un nom, ni un sens nominal pour un verbe. Pour le tagalog, `tuwing` introduit une fréquence ou un moment ; dans `tuwing umaga`, `umaga` est donc le nom « morning », pas le verbe « to be early ». Tu réponds sur deux lignes exactement :\nSens : la traduction française du mot dans cette phrase précise, accordée au contexte (1 à 5 mots, jamais le mot original recopié)\nNote : seulement s'il s'agit d'une expression figée, d'un faux ami ou d'un sens inattendu ; sinon écris -";
 
-const WORD_SYSTEM_EN: &str = "You are a bilingual dictionary for English-speaking learners. You are given a foreign sentence and a word or expression from that sentence. You answer in exactly two lines:\nMeaning: the English translation of the word in this precise sentence, matching the context (1 to 5 words, never the original word copied)\nNote: only if it is a fixed expression, a false friend or an unexpected meaning; otherwise write -";
+const WORD_SYSTEM_EN: &str = "You are a bilingual dictionary for English-speaking learners. You are given a foreign sentence and a word or expression from that sentence. The dictionary entries are authoritative candidates and may include part-of-speech labels: first identify the word's grammatical role in the sentence, then choose only a sense compatible with that role. Never choose a verb sense for a noun, or a noun sense for a verb. For Tagalog, `tuwing` introduces a recurring time or occasion; in `tuwing umaga`, `umaga` is the noun `morning`, not the verb `to be early`. You answer in exactly two lines:\nMeaning: the English translation of the word in this precise sentence, matching the context (1 to 5 words, never the original word copied)\nNote: only if it is a fixed expression, a false friend or an unexpected meaning; otherwise write -";
 
 fn word_query(lang: &str, word: &str, sentence: &str, hint: &str) -> String {
     let mut q = format!("Langue : {}\nPhrase : {sentence}\nMot : {word}", lang_name(lang));
@@ -954,7 +954,16 @@ pub fn dict_hint(dicts: &crate::dict::Dicts, native: &str, lang: &str, word: &st
         .cloned()
         .collect() };
     if !own.is_empty() {
-        parts.push(format!("{}{colon}{}", own[0].pos.to_lowercase(), glosses(&own)));
+        let mut by_pos: Vec<(String, Vec<crate::dict::DictEntry>)> = Vec::new();
+        for entry in own {
+            let pos = entry.pos.to_lowercase();
+            if let Some((_, entries)) = by_pos.iter_mut().find(|(known, _)| known == &pos) {
+                entries.push(entry);
+            } else {
+                by_pos.push((pos, vec![entry]));
+            }
+        }
+        parts.push(by_pos.iter().map(|(pos, entries)| format!("{pos}{colon}{}", glosses(entries))).collect::<Vec<_>>().join(if en { "; " } else { " ; " }));
     }
     if parts.is_empty() {
         return None;
@@ -1322,6 +1331,8 @@ mod tests {
         assert!(h.starts_with("andavo : première personne du singulier") && h.contains("(andare : "), "{h}");
         let h = dict_hint(&d, "fr", "en", "chose").unwrap();
         assert!(h.contains("choose"), "{h}");
+        let h = dict_hint(&d, "en", "tl", "umaga").unwrap();
+        assert!(h.contains("noun: morning") && h.contains("verb: to be early"), "{h}");
         // renvoi sans détail : aucun indice plutôt qu'un homonyme trompeur
         assert_eq!(dict_hint(&d, "fr", "it", "saliva"), None);
         // homographes (« faro », le phare, et « farò », je ferai) : les deux sens, au modèle de choisir

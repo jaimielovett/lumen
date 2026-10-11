@@ -504,6 +504,9 @@ pub static SOURCES: &[Source] = &[
     art("ja-bbc", "ja", "BBC News Japan", "https://feeds.bbci.co.uk/japanese/rss.xml", C1, C1, News),
     yt("ja-easy", "ja", "Easy Japanese", "UCBet5Paucgz8feYQhVd0Y3A", B1, B2, Learn),
     pod("ja-news-easy", "ja", "News In Easy Japanese", "https://feeds.castos.com/241n8", A2, B1, News),
+    // ----- tagalog -----
+    art("tl-philstar", "tl", "Philstar.com", "https://www.philstar.com/rss", B1, C1, News),
+    art("tl-inquirer", "tl", "Inquirer.net", "https://newsinfo.inquirer.net/feed", B1, C1, News),
     // ----- musique : classements de YouTube Music Charts (pays où ils existent) -----
     chart("en-chart-us", "en", "Top 100 · États-Unis", "PL4fGSI1pDJn6O1LS0XSdF3RyO0Rq_LDeI"),
     chart("en-chart-uk", "en", "Top 100 · Royaume-Uni", "PL4fGSI1pDJn6_f5P3MnzXg9l3GDfnSlXa"),

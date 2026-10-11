@@ -31,8 +31,11 @@ const pending = new Map<string, Promise<string>>();
 let player: HTMLAudioElement | null = null;
 
 /** La voix naturelle est installée et utilisable. */
-export function naturalVoiceReady(): boolean {
-  return isTauri && useApp.getState().models.some((m) => m.kind === "tts" && m.installed);
+export function naturalVoiceReady(lang?: string): boolean {
+  const settings = useApp.getState().settings;
+  const google = lang === "tl" && !!settings.google_tts_key?.trim();
+  const local = lang !== "tl" && useApp.getState().models.some((m) => m.kind === "tts" && m.installed);
+  return isTauri && (google || local);
 }
 
 function keyOf(lang: LangCode, text: string): string {
@@ -57,7 +60,7 @@ function request(lang: LangCode, text: string, prefetch: boolean): Promise<strin
 
 /** Prépare la prononciation en arrière-plan, pour qu'elle soit immédiate au clic. */
 export function preparePronunciation(text: string, lang: LangCode) {
-  if (!naturalVoiceReady() || text.split(/\s+/).length > PREPARE_MAX_WORDS) return;
+  if (!naturalVoiceReady(lang) || text.split(/\s+/).length > PREPARE_MAX_WORDS) return;
   request(lang, text, true).catch(() => {});
 }
 
@@ -78,7 +81,7 @@ export function stopPronunciation() {
  */
 export async function pronounce(text: string, lang: LangCode, voiceURI?: string, touched = false) {
   const my = ++turn;
-  if (naturalVoiceReady()) {
+  if (naturalVoiceReady(lang)) {
     try {
       let path: string;
       try {

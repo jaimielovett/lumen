@@ -58,7 +58,8 @@ const VOICE_MODEL = "supertonic-3";
  * Sans voix installée, le premier clic lance son téléchargement.
  */
 function MakeAudio({ lesson, again, onVoiced }: { lesson: Lesson; again?: boolean; onVoiced?(v: VoicedLesson): void }) {
-  const ready = useApp((s) => s.models.some((m) => m.kind === "tts" && m.installed));
+  const google = useApp((s) => lesson.lang === "tl" && !!s.settings.google_tts_key?.trim());
+  const ready = useApp((s) => google || (lesson.lang !== "tl" && s.models.some((m) => m.kind === "tts" && m.installed)));
   const dl = useApp((s) => s.downloads[VOICE_MODEL]);
   const [busy, setBusy] = useState<{ stage: string; pct: number } | null>(null);
   const toast = useApp((s) => s.toast);
@@ -69,7 +70,12 @@ function MakeAudio({ lesson, again, onVoiced }: { lesson: Lesson; again?: boolea
       return;
     }
     if (!ready) {
-      toast(t("La voix naturelle se télécharge (149 Mo). Vous pourrez ensuite créer l'audio d'un clic.", "The natural voice is downloading (149 MB). Then you can create the audio in one click."), "light");
+      toast(
+        lesson.lang === "tl"
+          ? t("Ajoutez une clé Google Cloud TTS dans Réglages › Voix pour lire le tagalog en ligne.", "Add a Google Cloud TTS key in Settings › Voice to read Tagalog online.")
+          : t("La voix naturelle se télécharge (149 Mo). Vous pourrez ensuite créer l'audio d'un clic.", "The natural voice is downloading (149 MB). Then you can create the audio in one click."),
+        "light",
+      );
       void useApp.getState().download(VOICE_MODEL);
       return;
     }
@@ -134,7 +140,7 @@ function MakeAudio({ lesson, again, onVoiced }: { lesson: Lesson; again?: boolea
     <button
       className="btn sm soft player-voice"
       onClick={start}
-      title={t("La voix naturelle lit toute la leçon, calculée sur votre Mac ; la lanterne suit chaque mot", "The natural voice reads the whole lesson, computed on your Mac; the lantern follows every word")}
+      title={google ? t("Google lit le tagalog en ligne ; la lanterne suit chaque mot", "Google reads Tagalog online; the lantern follows each word") : t("La voix naturelle lit toute la leçon, calculée sur votre Mac ; la lanterne suit chaque mot", "The natural voice reads the whole lesson, computed on your Mac; the lantern follows every word")}
     >
       <Icon name="wave" size={14} /> <span className="voice-label">{t("Créer l'audio", "Create audio")}</span>
     </button>

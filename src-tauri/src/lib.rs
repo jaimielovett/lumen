@@ -146,6 +146,7 @@ pub fn run() {
             commands::lyrics_find,
             commands::import_song,
             commands::gemini_check,
+            commands::google_tts_check,
             commands::online_check,
             commands::podcast_create,
             commands::level_estimate,

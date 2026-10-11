@@ -4,7 +4,7 @@ import { Avatar } from "../components/Avatar";
 import { Icon, type IconName } from "../components/Icon";
 import { sampleFor, splitWords } from "../components/Guide";
 import { Orb, Segmented, Switch } from "../components/ui";
-import { api, isTauri } from "../lib/api";
+import { api, errorText, isTauri } from "../lib/api";
 import { useBackup } from "../lib/backup";
 import { confirmAsk } from "../lib/dialogs";
 import { openShortcuts } from "../lib/menu";
@@ -791,6 +791,81 @@ function ReadingPane() {
 
 // ---------- Voix ----------
 
+const GOOGLE_TTS_KEY_URL = "https://console.cloud.google.com/apis/credentials";
+const googleKeyEnter = { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: 6 }, transition: { type: "spring" as const, stiffness: 320, damping: 30 } };
+
+/** Clé Google Cloud TTS, conservée sur ce Mac et utilisée pour le tagalog. */
+function GoogleTtsKey() {
+  const saved = useApp((s) => s.settings.google_tts_key ?? "");
+  const setSetting = useApp((s) => s.setSetting);
+  const [key, setKey] = useState(saved);
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  const check = async () => {
+    const k = key.trim();
+    if (!k || busy) return;
+    setBusy(true);
+    setError(null);
+    setDone(false);
+    try {
+      await api().googleTtsCheck(k);
+      await setSetting("google_tts_key", k);
+      setDone(true);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="gemini-key">
+      <div className="key-row">
+        <div className="key-field">
+          <input
+            className="input"
+            type={show ? "text" : "password"}
+            value={key}
+            placeholder={t("Collez votre clé Google Cloud ici", "Paste your Google Cloud key here")}
+            spellCheck={false}
+            autoComplete="off"
+            autoCorrect="off"
+            onChange={(e) => {
+              setKey(e.target.value);
+              setDone(false);
+              setError(null);
+            }}
+            onKeyDown={(e) => e.key === "Enter" && void check()}
+            aria-label={t("Clé Google Cloud TTS", "Google Cloud TTS key")}
+          />
+          <button className={`icon-btn ${show ? "on" : ""}`} onClick={() => setShow(!show)} aria-label={show ? t("Masquer la clé", "Hide the key") : t("Afficher la clé", "Show the key")}>
+            <Icon name="eye" size={15} />
+          </button>
+        </div>
+        <button className="btn sm primary" disabled={!key.trim() || busy} onClick={() => void check()}>
+          {busy ? t("Vérification…", "Checking…") : saved && key.trim() === saved.trim() && !error ? t("Vérifier à nouveau", "Check again") : t("Vérifier et garder", "Check and keep")}
+        </button>
+        {saved && <button className="btn sm ghost" onClick={() => { setKey(""); setDone(false); void setSetting("google_tts_key", ""); }}>{t("Retirer", "Remove")}</button>}
+      </div>
+      <AnimatePresence initial={false}>
+        {busy && <motion.div key="busy" className="key-note" {...googleKeyEnter}><Orb size={16} /><span>{t("Lumen demande à Google de prononcer « Kumusta »…", "Lumen is asking Google to pronounce “Kumusta”…")}</span></motion.div>}
+        {error && <motion.div key="err" className="key-note error" {...googleKeyEnter}><Icon name="ban" size={15} /><span>{error}</span></motion.div>}
+        {done && <motion.div key="ok" className="key-note ok" {...googleKeyEnter}><span className="key-check"><Icon name="check" size={13} stroke={2.4} /></span><span>{t("Clé prête : le tagalog utilisera Google en ligne.", "Key ready: Tagalog will use Google online.")}</span></motion.div>}
+      </AnimatePresence>
+      <span className="import-hint">
+        {t("Activez Cloud Text-to-Speech dans Google Cloud, puis créez une clé API ici :", "Enable Cloud Text-to-Speech in Google Cloud, then create an API key here:")} {" "}
+        <a className="link" href={GOOGLE_TTS_KEY_URL} onClick={(e) => { e.preventDefault(); void openSource(GOOGLE_TTS_KEY_URL); }}>
+          console.cloud.google.com <Icon name="external" size={12} stroke={2} />
+        </a>
+        {t(" La clé reste sur ce Mac. Le texte tagalog part chez Google.", " The key stays on this Mac. Tagalog text is sent to Google.")}
+      </span>
+    </div>
+  );
+}
+
 function VoicePane() {
   const settings = useApp((s) => s.settings);
   const setSetting = useApp((s) => s.setSetting);
@@ -808,11 +883,18 @@ function VoicePane() {
       <Section
         title={t("Voix naturelle", "Natural voice")}
         note={t(
-          "Elle prononce les mots et les expressions que vous touchez, et lit toute une leçon de texte avec le bouton « Créer l'audio ». Elle est calculée sur votre Mac, seulement quand vous en avez besoin.",
-          "It pronounces the words and phrases you tap, and reads a whole text lesson with the “Create audio” button. It is computed on your Mac, only when you need it.",
+          "Elle prononce les mots et les expressions que vous touchez, et lit toute une leçon de texte avec le bouton « Créer l'audio ». Supertonic reste sur votre Mac ; le tagalog peut utiliser Google Cloud avec votre clé.",
+          "It pronounces the words and phrases you tap, and reads a whole text lesson with the “Create audio” button. Supertonic stays on your Mac; Tagalog can use Google Cloud with your key.",
         )}
       >
         <div className="set-card">
+          <div className="set-row">
+            <div className="grow">
+              <strong>{t("Voix tagalog en ligne · Google Cloud", "Online Tagalog voice · Google Cloud")}</strong>
+              <span>{t("Voix Neural2 naturelle pour le tagalog. Elle est utilisée automatiquement pour les mots et les leçons tagalog quand la clé est vérifiée.", "Natural Neural2 voice for Tagalog. It is used automatically for Tagalog words and lessons when the key is verified.")}</span>
+            </div>
+          </div>
+          <div className="set-row"><GoogleTtsKey /></div>
           {models
             .filter((m) => m.kind === "tts")
             .map((m) => (

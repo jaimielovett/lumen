@@ -345,8 +345,8 @@ export function OnlineSection() {
               <strong>{t("Ce qui part en ligne", "What goes online")}</strong>
               <span>
                 {t(
-                  "Le mot touché et sa phrase, le texte à simplifier, vos questions au chat avec la leçon jointe. Votre profil, votre vocabulaire et votre progression restent sur ce Mac. Chaque traduction est gardée : un mot déjà traduit ne repart pas. La transcription et la voix restent toujours sur ce Mac.",
-                  "The tapped word and its sentence, the text to simplify, your chat questions with the attached lesson. Your profile, vocabulary and progress stay on this Mac. Every translation is kept: a word already translated isn't sent again. Transcription and the voice always stay on this Mac.",
+                  "Le mot touché et sa phrase, le texte à simplifier, vos questions au chat avec la leçon jointe. Votre profil, votre vocabulaire et votre progression restent sur ce Mac. Chaque traduction est gardée : un mot déjà traduit ne repart pas. La transcription reste sur ce Mac ; la voix tagalog part chez Google si vous activez Google Cloud TTS.",
+                  "The tapped word and its sentence, the text to simplify, your chat questions with the attached lesson. Your profile, vocabulary and progress stay on this Mac. Every translation is kept: a word already translated isn't sent again. Transcription stays on this Mac; Tagalog voice audio goes to Google if you enable Google Cloud TTS.",
                 )}
               </span>
             </div>

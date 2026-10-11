@@ -13,6 +13,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{anyhow, Result};
+use base64::Engine as _;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::models::{self, DownloadEvent, ModelInfo};
@@ -32,7 +34,78 @@ const ENGINE_FILES: &[&str] = if cfg!(windows) {
 };
 
 /// Les langues de Lumen portent le même code chez Supertonic.
-use crate::text::LANGS;
+use crate::text::TTS_LANGS;
+
+const GOOGLE_TTS_URL: &str = "https://texttospeech.googleapis.com/v1/text:synthesize";
+const GOOGLE_TTS_VOICE: &str = "fil-ph-Neural2-A";
+
+fn google_cached_path(data_dir: &Path, lang: &str, text: &str) -> PathBuf {
+    let mut h = Sha256::new();
+    h.update(format!("google-tts-v1\u{1}{lang}\u{1}{GOOGLE_TTS_VOICE}\u{1}{text}"));
+    cache_dir(data_dir).join(format!("{}.wav", &hex::encode(h.finalize())[..20]))
+}
+
+async fn google_synthesize(client: &reqwest::Client, key: &str, text: &str) -> Result<Vec<u8>> {
+    let response = client
+        .post(GOOGLE_TTS_URL)
+        .header("x-goog-api-key", key)
+        .json(&json!({
+            "input": { "text": text },
+            "voice": { "languageCode": "fil-PH", "name": GOOGLE_TTS_VOICE },
+            "audioConfig": { "audioEncoding": "LINEAR16", "speakingRate": 1.0 }
+        }))
+        .send()
+        .await
+        .map_err(|e| {
+            if e.is_timeout() {
+                anyhow!(crate::i18n::t("Google a mis trop de temps à répondre.", "Google took too long to respond."))
+            } else {
+                anyhow!(crate::i18n::t("Google est injoignable. Vérifiez la connexion à Internet.", "Google can't be reached. Check the Internet connection."))
+            }
+        })?;
+    let status = response.status();
+    let body = response.text().await.map_err(|_| anyhow!(crate::i18n::t("Réponse illisible de Google.", "Unreadable response from Google.")))?;
+    let value: Value = serde_json::from_str(&body).unwrap_or_default();
+    if !status.is_success() {
+        let message = value["error"]["message"].as_str().unwrap_or("").to_string();
+        let message = if message.is_empty() {
+            crate::i18n::t("Google refuse cette clé ou cette demande de voix.", "Google refused this key or voice request.").to_string()
+        } else {
+            message
+        };
+        return Err(anyhow!(message));
+    }
+    let encoded = value["audioContent"].as_str().ok_or_else(|| anyhow!(crate::i18n::t("Google n'a renvoyé aucun audio.", "Google returned no audio.")))?;
+    base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .map_err(|_| anyhow!(crate::i18n::t("L'audio renvoyé par Google est illisible.", "The audio returned by Google is unreadable.")))
+}
+
+/// Vérifie une clé Google Cloud TTS avec une très courte phrase en tagalog.
+pub async fn google_check(key: &str) -> Result<()> {
+    if key.trim().is_empty() {
+        return Err(anyhow!(crate::i18n::t("Collez d'abord votre clé Google Cloud.", "Paste your Google Cloud key first.")));
+    }
+    let client = reqwest::Client::builder().timeout(Duration::from_secs(30)).build()?;
+    google_synthesize(&client, key.trim(), "Kumusta").await.map(|_| ())
+}
+
+/// Prononce du tagalog avec Google Cloud TTS et garde le WAV en cache.
+pub async fn google_say(data_dir: &Path, key: &str, lang: &str, text: &str) -> Result<PathBuf> {
+    if lang != "tl" {
+        return Err(anyhow!(crate::i18n::t("Google TTS est configuré ici pour le tagalog.", "Google TTS is configured here for Tagalog.")));
+    }
+    let dest = google_cached_path(data_dir, lang, text);
+    if dest.exists() {
+        return Ok(dest);
+    }
+    tokio::fs::create_dir_all(cache_dir(data_dir)).await?;
+    let client = reqwest::Client::builder().timeout(Duration::from_secs(60)).build()?;
+    let raw = google_synthesize(&client, key.trim(), text).await?;
+    let clean = polish_wav(&raw).unwrap_or(raw);
+    tokio::fs::write(&dest, clean).await?;
+    Ok(dest)
+}
 
 /// Locuteur du modèle : 0 à 4 = voix féminines F1 à F5, 5 à 9 = masculines M1 à M5
 /// (ordre de voice.bin). « f » et « m » (premiers réglages) valent F1 et M1.
@@ -159,7 +232,7 @@ async fn run_engine(data_dir: &Path, m: &ModelInfo, lang: &str, text: &str, voic
 
 /// Prononce `text` et renvoie le chemin du fichier WAV (déjà en cache, ou créé).
 pub async fn say(data_dir: &Path, m: &ModelInfo, lang: &str, text: &str, voice: &str) -> Result<PathBuf> {
-    if !LANGS.contains(&lang) {
+    if !TTS_LANGS.contains(&lang) {
         return Err(anyhow!(crate::i18n::t("Cette langue n'a pas encore de voix naturelle.", "This language has no natural voice yet.")));
     }
     let dest = cached_path(data_dir, m, lang, text, voice);
@@ -336,11 +409,11 @@ pub async fn lesson_audio(
     text: &str,
     voice: &str,
     cancel: Arc<AtomicBool>,
-    mut on_progress: impl FnMut(f64),
+    on_progress: impl FnMut(f64),
 ) -> Result<LessonAudio> {
     use futures_util::StreamExt;
     use std::sync::atomic::Ordering;
-    if !LANGS.contains(&lang) {
+    if !TTS_LANGS.contains(&lang) {
         return Err(anyhow!(crate::i18n::t("Cette langue n'a pas encore de voix naturelle.", "This language has no natural voice yet.")));
     }
     let chunks = chunks_of(text, lang);
@@ -350,7 +423,6 @@ pub async fn lesson_audio(
     let media = crate::media::media_dir(data_dir);
     let work = media.join(format!(".voice-{}", crate::media::new_stem()));
     tokio::fs::create_dir_all(&work).await?;
-    let total = chunks.len();
     // chaque tâche a ses propres copies : elles tournent en parallèle
     let jobs: Vec<_> = chunks
         .iter()
@@ -370,7 +442,29 @@ pub async fn lesson_audio(
             }
         })
         .collect();
-    let mut stream = futures_util::stream::iter(jobs).buffered(PARALLEL);
+    let stream = futures_util::stream::iter(jobs).buffered(PARALLEL);
+    assemble_lesson_audio(data_dir, lang, chunks, work, stream, cancel, on_progress).await
+}
+
+/// Assemble les morceaux produits par n'importe quel moteur de voix. Le
+/// découpage, les pauses, les timings de la lanterne, le volume et la
+/// compression appartiennent à Lumen, pas au fournisseur de synthèse.
+async fn assemble_lesson_audio<S>(
+    data_dir: &Path,
+    lang: &str,
+    chunks: Vec<Chunk>,
+    work: PathBuf,
+    mut stream: S,
+    cancel: Arc<AtomicBool>,
+    mut on_progress: impl FnMut(f64),
+) -> Result<LessonAudio>
+where
+    S: futures_util::Stream<Item = Result<(u32, Vec<i16>)>> + Unpin,
+{
+    use futures_util::StreamExt;
+    use std::sync::atomic::Ordering;
+    let media = crate::media::media_dir(data_dir);
+    let total = chunks.len();
     let mut rate = 0u32;
     let mut all: Vec<i16> = Vec::new();
     let mut timings: Vec<[f64; 4]> = Vec::new();
@@ -411,6 +505,49 @@ pub async fn lesson_audio(
     drop(all);
     let _ = tokio::fs::remove_dir_all(&work).await;
     Ok(LessonAudio { path: path?, timings, duration })
+}
+
+/// Version en ligne de `lesson_audio`, utilisée pour le tagalog quand une clé
+/// Google Cloud TTS est enregistrée. Google renvoie déjà un WAV LINEAR16 ; le
+/// reste du pipeline (pauses, lanterne et compression) reste identique.
+pub async fn google_lesson_audio(
+    data_dir: &Path,
+    key: &str,
+    lang: &str,
+    text: &str,
+    cancel: Arc<AtomicBool>,
+    on_progress: impl FnMut(f64),
+) -> Result<LessonAudio> {
+    use futures_util::StreamExt;
+    use std::sync::atomic::Ordering;
+    if lang != "tl" {
+        return Err(anyhow!(crate::i18n::t("Google TTS est configuré ici pour le tagalog.", "Google TTS is configured here for Tagalog.")));
+    }
+    let chunks = chunks_of(text, lang);
+    if chunks.is_empty() {
+        return Err(anyhow!(crate::i18n::t("Cette leçon n'a pas de texte à lire.", "This lesson has no text to read.")));
+    }
+    let work = crate::media::media_dir(data_dir).join(format!(".voice-{}", crate::media::new_stem()));
+    tokio::fs::create_dir_all(&work).await?;
+    let client = reqwest::Client::builder().timeout(Duration::from_secs(90)).build()?;
+    let jobs: Vec<_> = chunks
+        .iter()
+        .map(|c| {
+            let client = client.clone();
+            let key = key.to_string();
+            let spoken = c.raw.split_whitespace().collect::<Vec<_>>().join(" ");
+            let cancel = cancel.clone();
+            async move {
+                if cancel.load(Ordering::Relaxed) {
+                    return Err(anyhow!("annulé"));
+                }
+                let wav = google_synthesize(&client, &key, &spoken).await?;
+                read_pcm(&wav).ok_or_else(|| anyhow!(crate::i18n::t("son illisible", "unreadable sound")))
+            }
+        })
+        .collect();
+    let stream = futures_util::stream::iter(jobs).buffered(PARALLEL);
+    assemble_lesson_audio(data_dir, lang, chunks, work, stream, cancel, on_progress).await
 }
 
 /// Change la fréquence d'un son (interpolation linéaire, assez fine pour la voix) :

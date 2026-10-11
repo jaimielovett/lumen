@@ -9,5 +9,14 @@ fn main() {
         }
         println!("cargo:rustc-link-lib=delayimp");
     }
+    if target("CARGO_CFG_TARGET_OS") == "macos" {
+        if let Ok(out) = std::process::Command::new("clang").arg("-print-resource-dir").output() {
+            if out.status.success() {
+                let dir = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+                println!("cargo:rustc-link-search=native={dir}/lib/darwin");
+                println!("cargo:rustc-link-lib=static=clang_rt.osx");
+            }
+        }
+    }
     tauri_build::build()
 }

@@ -94,7 +94,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk4NzVCQzBGQzBDRjA4MzkKUldRNUNNL0FEN3gxbU01QXNvUm1kRkpkTVdySkc4dXdxNXV1Wlg4b2piUldTQXdSK2dvLzAwdSsK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDYxOTQ3Mjg1NjEzOTA1RkIKUldUN0JUbGhoWEtVWVNtTUsyZ2FMbnpjVmluU3d1eHkrUGU4ZGo5bUVwTitoUi85bHBjTllzWTIK",
       "endpoints": [
         "https://github.com/LivingTwice/lumen/releases/latest/download/latest.json"
       ]

@@ -54,6 +54,8 @@ export const DEFAULTS: Record<string, string> = {
   online_provider: "deepseek",
   online_words: "1",
   online_chat: "1",
+  // clé Google Cloud Text-to-Speech pour la voix tagalog en ligne ; reste sur ce Mac
+  google_tts_key: "",
   // chat : réflexion du modèle avant de répondre, et sa longueur
   chat_think: "0",
   chat_effort: "medium",

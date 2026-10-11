@@ -333,6 +333,7 @@ pub fn country(lang: &str) -> &'static str {
         "vi" => "vn",
         "ko" => "kr",
         "ja" => "jp",
+        "tl" => "ph",
         _ => "us",
     }
 }

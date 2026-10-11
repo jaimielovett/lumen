@@ -52,6 +52,7 @@ const RAW: (Omit<LangInfo, "name"> & { fr: string; en: string })[] = [
   { code: "vi", fr: "Vietnamien", en: "Vietnamese", native: "Tiếng Việt", badge: "VI", color: "#c0392b", tts: ["vi-VN", "vi"], hello: "Xin chào" },
   { code: "ko", fr: "Coréen", en: "Korean", native: "한국어", badge: "KO", color: "#5f3dc4", tts: ["ko-KR", "ko"], hello: "안녕하세요" },
   { code: "ja", fr: "Japonais", en: "Japanese", native: "日本語", badge: "JA", color: "#e64980", tts: ["ja-JP", "ja"], hello: "こんにちは" },
+  { code: "tl", fr: "Tagalog", en: "Tagalog", native: "Tagalog", badge: "TL", color: "#1976d2", tts: ["tl-PH", "tl"], hello: "Kumusta" },
 ];
 
 export const LANGS: LangInfo[] = RAW.map((l) => ({
@@ -70,7 +71,7 @@ export function featuredLangs(): LangCode[] {
 /** Dictionnaire livré avec l'application (définitions en français de six langues) ; les
  *  autres se téléchargent au premier usage. */
 export function bundledDict(code: string): boolean {
-  return t("en it de pt ru es", "").split(" ").includes(code);
+  return t("en it de pt ru es tl", "it de pt ru es fr tl").split(" ").includes(code);
 }
 
 /** « italien » ou « Italian », au milieu d'une phrase. */
@@ -171,6 +172,16 @@ Un jour, elle trouva une lettre cachée entre deux pierres. Le papier était hum
 Marthe s'assit et relut la lettre. Qui l'avait écrite ? Depuis combien de temps était-elle là ? Elle regarda la mer, comme si la réponse pouvait arriver avec la prochaine vague.
 
 Ce soir-là, elle écrivit une réponse et la laissa au même endroit. Elle ne savait pas si quelqu'un la trouverait un jour. Mais, pour la première fois depuis des années, le phare ne lui sembla pas vide.`,
+  },
+  tl: {
+    title: "Ang parola sa isla",
+    text: `Tuwing umaga, umaakyat si Marta sa makitid na hagdan ng lumang parola. Mula sa itaas, tila walang hanggan at tahimik ang dagat. Mahilig siyang makinig sa hangin habang dahan-dahang sumisikat ang araw sa likod ng mga ulap.
+
+Isang araw, nakakita siya ng liham na nakatago sa pagitan ng dalawang bato. Basa ang papel, ngunit mababasa pa rin ang mga salita: “Kung binabasa mo ito, hindi ka nag-iisa.”
+
+Umupo si Marta at muling binasa ang liham. Sino kaya ang sumulat nito? Gaano na kaya ito katagal doon? Tumingin siya sa dagat, na para bang maaaring dumating ang sagot kasama ng susunod na alon.
+
+Nang gabing iyon, sumulat siya ng sagot at iniwan ito sa parehong lugar. Hindi niya alam kung may makakakita rito. Ngunit sa unang pagkakataon sa loob ng maraming taon, hindi na tila walang laman ang parola.`,
   },
   nl: {
     title: "De oude vuurtoren",

@@ -934,6 +934,10 @@ export function createMockApi(): Api {
       // l'aperçu navigateur n'a pas le moteur : la voix du système prend le relais
       throw t("NO_VOICE: la voix naturelle fonctionne dans l'application Mac", "NO_VOICE: the natural voice works in the Mac app");
     },
+    async googleTtsCheck(key) {
+      await sleep(500);
+      if (key.trim().length < 20) throw t("Google refuse cette clé Cloud TTS.", "Google refuses this Cloud TTS key.");
+    },
     async readFile() {
       throw t("La lecture de fichiers fonctionne dans l'application Mac.", "Reading files works in the Mac app.");
     },

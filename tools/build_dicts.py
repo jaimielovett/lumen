@@ -37,7 +37,7 @@ LANGS = {"Anglais": "en", "Espagnol": "es", "Italien": "it", "Allemand": "de",
          "Portugais": "pt", "Russe": "ru"}
 # Wiktionnaire anglais : pas d'anglais (un anglophone ne l'étudie pas), le français en plus
 LANGS_EN = {"Italian": "it", "Spanish": "es", "German": "de", "Portuguese": "pt",
-            "Russian": "ru", "French": "fr"}
+            "Russian": "ru", "French": "fr", "Tagalog": "tl"}
 SKIP_POS = ("Nom propre", "Prénom", "Nom de famille", "Symbole", "Lettre",
             "Nom scientifique", "Sinogramme", "Erreur", "Variante typographique")
 MAX_GLOSS = 3
@@ -247,7 +247,7 @@ def build_en(src: str, dst: str, lang: str):
 
 # ====================== Version 2 : les 24 autres langues ======================
 
-V2_LANGS = "nl sv da fi et lv lt pl cs sk sl hr hu ro bg uk el tr ar hi id vi ko ja".split()
+V2_LANGS = "nl sv da fi et lv lt pl cs sk sl hr hu ro bg uk el tr ar hi id vi ko ja tl".split()
 # Wiktionnaire anglais : le croate est rangé sous le serbo-croate (alphabet latin seulement)
 EN_CODES = {"hr": ["sh"]}
 FR_CODES = {"hr": ["hr", "sh"]}

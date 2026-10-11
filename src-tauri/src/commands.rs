@@ -400,7 +400,7 @@ pub async fn ai_word(
     let brain = brain(&state, online::Role::Words)?;
     // traductions en français (clé d'origine) ou en anglais (clé à part)
     let native = i18n::native();
-    let version = if native == "en" { "w3en" } else { "w3" };
+    let version = if native == "en" { "w4en" } else { "w4" };
     let normalized = text::normalize_for(&word, &lang);
     let key_of = |b: &Brain| hash(&[version, &b.id(), &lang, &normalized, sentence.trim()]);
     if let Some(v) = db::cache_get(&state.db.lock(), &key_of(&brain)) {
@@ -408,20 +408,14 @@ pub async fn ai_word(
         return Ok(WordAnswer { translation: t.to_string(), note: n.to_string(), cached: true });
     }
     let epoch = state.ai.next_epoch();
-    // indice du dictionnaire : forme de base et premiers sens
-    let mut hint = String::new();
-    if !word.contains(' ') && state.dicts.available(&lang) {
-        if let Ok(d) = state.dicts.lookup(&lang, &word) {
-            let glosses: Vec<String> = d.entries.iter().flat_map(|e| e.glosses.iter().take(2).cloned()).take(3).collect();
-            if let Some(l) = &d.lemma {
-                hint = tr!("forme de {l}", "form of {l}");
-                if !glosses.is_empty() {
-                    hint.push_str(t(" : ", ": "));
-                }
-            }
-            hint.push_str(&glosses.join(" ; ").to_lowercase());
-        }
-    }
+    // Conserve les catégories grammaticales : sans elles, le modèle confond
+    // les homographes, par exemple `umaga` nom (« morning ») et verbe
+    // (« to be early »).
+    let hint = if !word.contains(' ') {
+        ai::dict_hint(&state.dicts, native, &lang, &word).unwrap_or_default()
+    } else {
+        String::new()
+    };
     let messages = ai::word_messages(native, &lang, &word, &sentence, &hint);
     let (raw, by) = translate(state.inner(), brain, &messages, 72, epoch, &on_event).await?;
     let (translation, note) = ai::parse_word_answer(&raw);
@@ -823,9 +817,10 @@ pub struct VoicedLesson {
 /// Annulable avec `model_cancel("voice:<id>")`.
 #[tauri::command]
 pub async fn lesson_voice(state: State<'_, AppState>, id: i64, on_event: Channel<ImportEvent>) -> R<VoicedLesson> {
-    let m = voice_model(&state)?;
     let (lang, text, _) = db::lesson_media(&state.db.lock(), id).map_err(err)?;
     let voice = voice_for(&state, &lang)?;
+    let google_key = db::setting(&state.db.lock(), "google_tts_key").unwrap_or_default();
+    let local_model = if lang == "tl" && !google_key.trim().is_empty() { None } else { Some(voice_model(&state)?) };
     let key = format!("voice:{id}");
     let cancel = Arc::new(AtomicBool::new(false));
     {
@@ -839,10 +834,17 @@ pub async fn lesson_voice(state: State<'_, AppState>, id: i64, on_event: Channel
     // avec Whisper : 85 % pour la voix, 15 % pour le recalage
     let share = if asr.is_some() { 0.85 } else { 1.0 };
     let _ = on_event.send(ImportEvent::Stage { stage: "voice".into() });
-    let res = crate::voice::lesson_audio(&state.data_dir, m, &lang, &text, &voice, cancel, |p| {
-        let _ = on_event.send(ImportEvent::Progress { value: p * share });
-    })
-    .await;
+    let res = if let Some(m) = local_model {
+        crate::voice::lesson_audio(&state.data_dir, m, &lang, &text, &voice, cancel, |p| {
+            let _ = on_event.send(ImportEvent::Progress { value: p * share });
+        })
+        .await
+    } else {
+        crate::voice::google_lesson_audio(&state.data_dir, &google_key, &lang, &text, cancel, |p| {
+            let _ = on_event.send(ImportEvent::Progress { value: p * share });
+        })
+        .await
+    };
     state.downloads.lock().remove(&key);
     let audio = res.map_err(err)?;
     let mut timings = serde_json::to_string(&audio.timings).map_err(err)?;
@@ -877,12 +879,17 @@ pub async fn lesson_voice(state: State<'_, AppState>, id: i64, on_event: Channel
 /// abandonnée si une demande plus récente arrive entre-temps.
 #[tauri::command]
 pub async fn tts_say(state: State<'_, AppState>, lang: String, text: String, prefetch: bool) -> R<String> {
-    let m = voice_model(&state)?;
     let text: String = text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(600).collect();
     if text.is_empty() {
         return Err(t("Rien à prononcer.", "Nothing to pronounce.").into());
     }
     let voice = voice_for(&state, &lang)?;
+    let google_key = db::setting(&state.db.lock(), "google_tts_key").unwrap_or_default();
+    if lang == "tl" && !google_key.trim().is_empty() {
+        let path = crate::voice::google_say(&state.data_dir, &google_key, &lang, &text).await.map_err(err)?;
+        return Ok(path.to_string_lossy().into_owned());
+    }
+    let m = voice_model(&state)?;
     let cached = crate::voice::cached_path(&state.data_dir, m, &lang, &text, &voice);
     if cached.exists() {
         return Ok(cached.to_string_lossy().into_owned());
@@ -1386,6 +1393,12 @@ pub async fn online_check(provider: String, key: String, url: Option<String>, mo
 pub async fn gemini_check(key: String) -> R<podcast::Models> {
     let c = podcast::client().map_err(err)?;
     podcast::models(&c, &key).await.map_err(err)
+}
+
+/// Vérifie une clé Google Cloud Text-to-Speech avec une courte phrase en tagalog.
+#[tauri::command]
+pub async fn google_tts_check(key: String) -> R<()> {
+    crate::voice::google_check(&key).await.map_err(err)
 }
 
 /// Crée un podcast sur mesure et en fait une leçon : Gemini l'écrit puis le dit

@@ -24,9 +24,10 @@ const DICT_VERSION: &str = "1";
 
 /// Définitions en français livrées avec l'application.
 const BUNDLED_FR: &[&str] = &["en", "es", "it", "de", "pt", "ru"];
+const BUNDLED_EN: &[&str] = &["tl"];
 /// Les 24 autres langues de Lumen : dictionnaires du format 2, en français et en anglais.
 pub const V2_LANGS: &[&str] = &[
-    "nl", "sv", "da", "fi", "et", "lv", "lt", "pl", "cs", "sk", "sl", "hr", "hu", "ro", "bg", "uk", "el", "tr", "ar", "hi", "id", "vi", "ko", "ja",
+    "nl", "sv", "da", "fi", "et", "lv", "lt", "pl", "cs", "sk", "sl", "hr", "hu", "ro", "bg", "uk", "el", "tr", "ar", "hi", "id", "vi", "ko", "ja", "tl",
 ];
 
 /// Dictionnaires téléchargés à la demande, publiés une fois pour toutes dans des versions
@@ -166,7 +167,8 @@ impl Dicts {
     }
 
     fn bundled(&self, native: &str, lang: &str) -> bool {
-        native == "fr" && BUNDLED_FR.contains(&lang)
+        (native == "fr" && (BUNDLED_FR.contains(&lang) || BUNDLED_EN.contains(&lang)))
+            || (native == "en" && BUNDLED_EN.contains(&lang))
     }
 
     /// Dictionnaire prêt pour cette langue, dans la langue de l'interface.
@@ -1055,8 +1057,8 @@ mod tests {
     fn catalogue() {
         // toutes les langues de Lumen ont un dictionnaire dans les deux langues de l'interface
         for lang in crate::text::LANGS {
-            let fr = BUNDLED_FR.contains(lang) || remote("fr", lang).is_some();
-            let en = remote("en", lang).is_some();
+            let fr = BUNDLED_FR.contains(lang) || BUNDLED_EN.contains(lang) || remote("fr", lang).is_some();
+            let en = BUNDLED_EN.contains(lang) || remote("en", lang).is_some();
             assert!(fr || *lang == "fr", "{lang} : pas de dictionnaire en français");
             assert!(en || *lang == "en", "{lang} : pas de dictionnaire en anglais");
         }

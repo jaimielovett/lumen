@@ -6,8 +6,14 @@ use serde::Serialize;
 use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
 
-/// Langues proposées par Lumen : toutes celles de la voix naturelle (Supertonic 3).
+/// Langues proposées par Lumen. Tagalog a un dictionnaire local, mais n'est
+/// pas pris en charge par Supertonic 3 pour la voix naturelle.
 pub const LANGS: &[&str] = &[
+    "en", "it", "de", "pt", "ru", "es", "fr", "nl", "sv", "da", "fi", "et", "lv", "lt", "pl", "cs", "sk", "sl", "hr", "hu", "ro", "bg", "uk",
+    "el", "tr", "ar", "hi", "id", "vi", "ko", "ja", "tl",
+];
+
+pub const TTS_LANGS: &[&str] = &[
     "en", "it", "de", "pt", "ru", "es", "fr", "nl", "sv", "da", "fi", "et", "lv", "lt", "pl", "cs", "sk", "sl", "hr", "hu", "ro", "bg", "uk",
     "el", "tr", "ar", "hi", "id", "vi", "ko", "ja",
 ];

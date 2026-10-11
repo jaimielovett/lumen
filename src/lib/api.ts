@@ -75,6 +75,8 @@ export interface Api {
   modelDelete(id: string): Promise<void>;
   /** prononce avec la voix naturelle ; renvoie le chemin du fichier WAV (mis en cache) */
   ttsSay(lang: LangCode, text: string, prefetch: boolean): Promise<string>;
+  /** vérifie une clé Google Cloud Text-to-Speech */
+  googleTtsCheck(key: string): Promise<void>;
   /** crée l'audio d'une leçon de texte avec la voix naturelle */
   lessonVoice(id: number, onEvent: (e: ImportEvent) => void): Promise<VoicedLesson>;
   lessonVoiceCancel(id: number): Promise<void>;
@@ -200,6 +202,7 @@ async function createTauriApi(): Promise<Api> {
     modelCancel: (id) => invoke("model_cancel", { id }),
     modelDelete: (id) => invoke("model_delete", { id }),
     ttsSay: (lang, text, prefetch) => invoke("tts_say", { lang, text, prefetch }),
+    googleTtsCheck: (key) => invoke("google_tts_check", { key }),
     lessonVoice: (id, onEvent) => invoke("lesson_voice", { id, onEvent: ch<ImportEvent>(onEvent) }),
     lessonVoiceCancel: (id) => invoke("model_cancel", { id: `voice:${id}` }),
     readFile: (path) => invoke<ArrayBuffer>("read_file", { path }),
