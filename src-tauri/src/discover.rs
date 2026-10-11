@@ -505,6 +505,15 @@ pub static SOURCES: &[Source] = &[
     yt("ja-easy", "ja", "Easy Japanese", "UCBet5Paucgz8feYQhVd0Y3A", B1, B2, Learn),
     pod("ja-news-easy", "ja", "News In Easy Japanese", "https://feeds.castos.com/241n8", A2, B1, News),
     // ----- tagalog -----
+    yt("tl-another-chui", "tl", "Another Chui Show PH", "UC9x3qzD2uxGz--sBaSMhMjg", A2, B2, Learn),
+    yt("tl-peenoise", "tl", "Peenoise Plays", "UC7TrbfuqtaqJyvji22UZIYw", A2, B2, Learn),
+    yt("tl-mary-bautista", "tl", "Mary Bautista", "UCst-F1upPxpie6i_jA6vpRw", A2, B2, Learn),
+    yt("tl-rec-create", "tl", "Rec.Create", "UCpZdK-V4x1b2TFzFBKwGztw", A2, B2, Learn),
+    yt("tl-language-crush", "tl", "Language Crush Tagalog", "UCRzEyp4XtyTpGhdEuriB9iQ", A1, B1, Learn),
+    yt("tl-chef-jp-anglo", "tl", "Chef JP Anglo", "UCm37QmpEveOoeKfUvp8bcvA", A2, B2, Learn),
+    yt("tl-astig-vegan", "tl", "Astig Vegan", "UCQiTYiCryLW0RoDyQh6aQ7w", A2, B2, Learn),
+    yt("tl-chui-show", "tl", "The Chui Show", "UCJX9p4c81NoZ4_TFME-yY6g", A2, B2, Learn),
+    yt("tl-ninong-ry", "tl", "Ninong Ry", "UCvQrjgLj841wiQAKDgtKFOw", A2, B2, Learn),
     art("tl-philstar", "tl", "Philstar.com", "https://www.philstar.com/rss", B1, C1, News),
     art("tl-inquirer", "tl", "Inquirer.net", "https://newsinfo.inquirer.net/feed", B1, C1, News),
     // ----- musique : classements de YouTube Music Charts (pays où ils existent) -----
