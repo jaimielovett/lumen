@@ -209,14 +209,21 @@ export const useDiscover = create<DiscoverStore>((set, get) => ({
         toast(t("Aucune source n'a répondu. Lumen a-t-il accès à Internet ?", "No source answered. Does Lumen have Internet access?"), "error");
         return;
       }
+      const allLevels = useApp.getState().settings[`discover_all_${lang}`] === "1";
       const level = levelNow(lang);
       const fresh = (feed?.items ?? []).filter((it) => !before.has(it.id));
-      const here = fresh.filter((it) => it.shelf === "music" || fits(it, level)).length;
+      const here = allLevels ? fresh.length : fresh.filter((it) => it.shelf === "music" || fits(it, level)).length;
       const silent =
         r.failed.length > 0
           ? t(` (${r.failed.length} sur ${r.sources} n'ont pas répondu)`, ` (${r.failed.length} of ${r.sources} didn't answer)`)
           : "";
-      if (here > 0) toast(t(`${count(here, "nouveauté", "nouveautés", "new find", "new finds")} à votre niveau${silent}`, `${count(here, "nouveauté", "nouveautés", "new find", "new finds")} at your level${silent}`), "light");
+      if (here > 0)
+        toast(
+          allLevels
+            ? t(`${count(here, "nouveauté", "nouveautés", "new find", "new finds")} à tous les niveaux${silent}`, `${count(here, "nouveauté", "nouveautés", "new find", "new finds")} across all levels${silent}`)
+            : t(`${count(here, "nouveauté", "nouveautés", "new find", "new finds")} à votre niveau${silent}`, `${count(here, "nouveauté", "nouveautés", "new find", "new finds")} at your level${silent}`),
+          "light",
+        );
       else if (fresh.length > 0)
         toast(
           t(
@@ -264,20 +271,21 @@ export const useDiscover = create<DiscoverStore>((set, get) => ({
   },
 }));
 
-/** Nouveautés à ce niveau depuis la dernière visite (pastille de Découvrir). */
+/** Nouveautés au niveau choisi, ou à tous les niveaux, depuis la dernière visite. */
 export function newAtLevel(feed: DiscoverFeed | undefined, seen: number, level: number): number {
   if (!feed) return 0;
   return feed.items.filter((it) => isNew(it, seen) && fits(it, level)).length;
 }
 
-/** Ce que l'entrée Découvrir de la barre latérale signale : nouveautés à votre niveau, et dernière visite (0 : jamais). */
+/** Ce que l'entrée Découvrir de la barre latérale signale : nouveautés dans le filtre actif, et dernière visite (0 : jamais). */
 export function useDiscoverNews(lang: LangCode): { fresh: number; seen: number } {
   const feed = useDiscover((s) => s.feeds[lang]);
   const load = useDiscover((s) => s.load);
   const seen = Number(useApp((s) => s.settings[`discover_seen_${lang}`])) || 0;
+  const allLevels = useApp((s) => s.settings[`discover_all_${lang}`] === "1");
   const { level } = useLevel(lang);
   useEffect(() => {
     void load(lang);
   }, [lang, load]);
-  return { fresh: newAtLevel(feed, seen, level), seen };
+  return { fresh: allLevels ? (feed?.items ?? []).filter((it) => isNew(it, seen)).length : newAtLevel(feed, seen, level), seen };
 }

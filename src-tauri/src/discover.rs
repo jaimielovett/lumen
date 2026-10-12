@@ -1602,7 +1602,7 @@ pub async fn refresh(
             Some(p) => Some(p),
             None => {
                 on_event(ImportEvent::Stage { stage: "tools".into() });
-                crate::tools::ensure_youtube_tools(data_dir, |p| on_event(ImportEvent::Progress { value: p })).await.ok()
+                Some(crate::tools::ensure_youtube_tools(data_dir, |p| on_event(ImportEvent::Progress { value: p })).await?)
             }
         }
     } else {

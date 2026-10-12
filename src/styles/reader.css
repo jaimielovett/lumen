@@ -1999,6 +1999,18 @@ span.player-voice .icon-btn {
   color: var(--light-strong);
   filter: drop-shadow(0 0 6px var(--light));
 }
+.complete-bulk {
+  width: 100%;
+  justify-content: center;
+  white-space: normal;
+}
+.complete-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  flex-wrap: wrap;
+}
 .burst {
   position: relative;
   width: 90px;

@@ -328,6 +328,7 @@ export function Discover({ lang }: { lang: LangCode }) {
   const refresh = useDiscover((s) => s.refresh);
   const ensure = useDiscover((s) => s.ensure);
   const { level, auto, estimated, estimate, setLevel } = useLevel(lang);
+  const allLevels = useApp((s) => s.settings[`discover_all_${lang}`] === "1");
   const [kind, setKind] = useState<Kind>("all");
   // dernière visite : les « Nouveau » restent visibles pendant toute celle-ci
   const [seen] = useState(() => seenAt(lang));
@@ -362,7 +363,7 @@ export function Discover({ lang }: { lang: LangCode }) {
   const working = (!!busy && busy.stage !== "") || !!feed?.refreshing;
   const autoOn = useApp((s) => s.settings.discover_auto) !== "0";
   const shown = useMemo(() => (feed?.items ?? []).filter((it) => kind === "all" || it.kind === kind || (kind === "audio" && it.shelf === "music")), [feed, kind]);
-  const atLevel = useMemo(() => shown.filter((it) => it.shelf !== "music" && fits(it, level)), [shown, level]);
+  const atLevel = useMemo(() => shown.filter((it) => it.shelf !== "music" && (allLevels || fits(it, level))), [shown, level, allLevels]);
   // trouvailles qui répondent à la recherche en ligne
   const q = query.trim().toLowerCase();
   const local = useMemo(
@@ -380,7 +381,7 @@ export function Discover({ lang }: { lang: LangCode }) {
   const shelves = useMemo(() => {
     const rest = atLevel.filter((it) => it.id !== hero?.id);
     const of = (shelf: DiscoverItem["shelf"]) => rest.filter((it) => it.shelf === shelf).slice(0, SHELF_MAX);
-    const next = level < 5 ? shown.filter((it) => it.shelf !== "music" && it.lo === level + 1).slice(0, SHELF_MAX) : [];
+    const next = !allLevels && level < 5 ? shown.filter((it) => it.shelf !== "music" && it.lo === level + 1).slice(0, SHELF_MAX) : [];
     // chansons : à tous les niveaux, les plus récentes d'abord
     const songs = shown.filter((it) => it.shelf === "music").slice(0, SHELF_MAX);
     return [
@@ -388,7 +389,11 @@ export function Discover({ lang }: { lang: LangCode }) {
       {
         id: "news",
         title: t("Actualités", "News"),
-        hint: level <= 3 ? t("L'actualité dans une langue plus simple", "The news in simpler language") : t("Ce qui se passe, comme le lisent les natifs", "What's happening, as natives read it"),
+        hint: allLevels
+          ? t("À tous les niveaux, du plus simple au plus riche", "Across levels, from simplest to richest")
+          : level <= 3
+            ? t("L'actualité dans une langue plus simple", "The news in simpler language")
+            : t("Ce qui se passe, comme le lisent les natifs", "What's happening, as natives read it"),
         items: of("news"),
       },
       {
@@ -405,7 +410,7 @@ export function Discover({ lang }: { lang: LangCode }) {
         items: next,
       },
     ].filter((s) => s.items.length > 0);
-  }, [atLevel, shown, hero, level]);
+  }, [atLevel, shown, hero, level, allLevels]);
 
   const sourceNames = useMemo(() => [...new Set((feed?.items ?? []).map((it) => it.source_name))], [feed]);
   const first = !feed || (feed.refreshed_at === 0 && feed.items.length === 0);
@@ -452,16 +457,25 @@ export function Discover({ lang }: { lang: LangCode }) {
 
           <div className="disc-controls" data-tour="discover">
             <div className="disc-level">
-              <span className="label">{t("Votre niveau", "Your level")}</span>
+              <span className="label">{allLevels ? t("Niveaux", "Levels") : t("Votre niveau", "Your level")}</span>
               <Segmented
                 id="disc-level"
-                label={t("Votre niveau", "Your level")}
-                value={String(level)}
-                onChange={(v) => setLevel(Number(v) === estimated ? null : Number(v))}
-                options={LEVELS.map((name, i) => ({ value: String(i + 1), label: name }))}
+                label={allLevels ? t("Niveaux", "Levels") : t("Votre niveau", "Your level")}
+                value={allLevels ? "all" : String(level)}
+                onChange={(v) => {
+                  if (v === "all") {
+                    void useApp.getState().setSetting(`discover_all_${lang}`, "1");
+                    return;
+                  }
+                  void useApp.getState().setSetting(`discover_all_${lang}`, "");
+                  setLevel(Number(v) === estimated ? null : Number(v));
+                }}
+                options={[{ value: "all", label: t("Tout", "All") }, ...LEVELS.map((name, i) => ({ value: String(i + 1), label: name }))]}
               />
               <span className="disc-level-hint">
-                {auto ? (
+                {allLevels ? (
+                  <span>{t("tous les niveaux", "all levels")}</span>
+                ) : auto ? (
                   <span title={t(`${estimate.forms} formes connues, regroupées par mot de base`, `${estimate.forms} known forms, grouped by base word`)}>
                     {t(`estimé d'après ${unitsLabel(estimate)}`, `estimated from ${unitsLabel(estimate)}`)}
                   </span>
@@ -511,7 +525,7 @@ export function Discover({ lang }: { lang: LangCode }) {
           ) : (
             <AnimatePresence mode="wait">
               <motion.div
-                key={`${level}-${kind}`}
+                key={`${allLevels ? "all" : level}-${kind}`}
                 className="disc-results"
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -525,25 +539,29 @@ export function Discover({ lang }: { lang: LangCode }) {
                 {!hero && shelves.length === 0 && (
                   <div className="empty disc-empty">
                     <Orb size={40} />
-                    <h3>{t(`Rien au niveau ${levelName(level)} pour l'instant`, `Nothing at level ${levelName(level)} for now`)}</h3>
+                    <h3>{allLevels ? t("Rien pour l'instant", "Nothing here for now") : t(`Rien au niveau ${levelName(level)} pour l'instant`, `Nothing at level ${levelName(level)} for now`)}</h3>
                     <p>
-                      {t(
-                        `Les sources ${inLang(lang)} proposent surtout d'autres niveaux aujourd'hui. Essayez le niveau voisin, ou cherchez ce qui vous intéresse dans le champ ci-dessus.`,
-                        `The sources ${inLang(lang)} mostly offer other levels today. Try the next level, or search for what interests you in the field above.`,
-                      )}
+                      {allLevels
+                        ? t(`Les sources ${inLang(lang)} n'ont rien proposé aujourd'hui. Essayez d'actualiser ou cherchez ce qui vous intéresse dans le champ ci-dessus.`, `The ${inLang(lang)} sources have nothing new today. Try refreshing, or search for what interests you in the field above.`)
+                        : t(
+                            `Les sources ${inLang(lang)} proposent surtout d'autres niveaux aujourd'hui. Essayez le niveau voisin, ou cherchez ce qui vous intéresse dans le champ ci-dessus.`,
+                            `The sources ${inLang(lang)} mostly offer other levels today. Try the next level, or search for what interests you in the field above.`,
+                          )}
                     </p>
-                    <div style={{ display: "flex", gap: 10 }}>
-                      {level > 1 && (
-                        <button className="btn outline" onClick={() => setLevel(level - 1)}>
-                          {levelName(level - 1)}
-                        </button>
-                      )}
-                      {level < 5 && (
-                        <button className="btn outline" onClick={() => setLevel(level + 1)}>
-                          {levelName(level + 1)}
-                        </button>
-                      )}
-                    </div>
+                    {!allLevels && (
+                      <div style={{ display: "flex", gap: 10 }}>
+                        {level > 1 && (
+                          <button className="btn outline" onClick={() => setLevel(level - 1)}>
+                            {levelName(level - 1)}
+                          </button>
+                        )}
+                        {level < 5 && (
+                          <button className="btn outline" onClick={() => setLevel(level + 1)}>
+                            {levelName(level + 1)}
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </motion.div>
@@ -565,6 +583,7 @@ export function Discover({ lang }: { lang: LangCode }) {
 /** La vue Découvrir, à part dans la barre latérale : la recherche en ligne, puis ce que les sources proposent. */
 export function DiscoverView() {
   const lang = useApp((s) => s.lang)();
+  const allLevels = useApp((s) => s.settings[`discover_all_${lang}`] === "1");
   const scroller = useRef<HTMLDivElement>(null);
   return (
     <>
@@ -574,7 +593,7 @@ export function DiscoverView() {
           <header className="page-head">
             <div>
               <h1>{t("Découvrir", "Discover")}</h1>
-              <p>{t(`Des vidéos, des podcasts, des chansons et des articles ${inLang(lang)}, à votre niveau.`, `Videos, podcasts, songs and articles ${inLang(lang)}, at your level.`)}</p>
+              <p>{allLevels ? t(`Des vidéos, des podcasts, des chansons et des articles ${inLang(lang)}, pour tous les niveaux.`, `Videos, podcasts, songs and articles ${inLang(lang)}, for every level.`) : t(`Des vidéos, des podcasts, des chansons et des articles ${inLang(lang)}, à votre niveau.`, `Videos, podcasts, songs and articles ${inLang(lang)}, at your level.`)}</p>
             </div>
           </header>
           <Discover lang={lang} />

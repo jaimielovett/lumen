@@ -856,7 +856,7 @@ pub async fn yt_info(data_dir: &Path, ytdlp: &Path, url: &str, browser: Option<&
 pub async fn yt_latest(data_dir: &Path, ytdlp: &Path, url: &str, max: usize, lang: Option<&str>) -> Result<serde_json::Value> {
     let mut args: Vec<String> = vec!["-J".into(), "--flat-playlist".into(), "--playlist-items".into(), format!("1:{max}")];
     match lang {
-        Some(l) => args.extend(["--extractor-args".into(), format!("youtube:lang={l}")]),
+        Some(l) => args.extend(["--extractor-args".into(), format!("youtube:lang={}", youtube_lang(l))]),
         None => args.extend(["--extractor-args".into(), "youtubetab:approximate_date".into()]),
     }
     args.push(url.into());
@@ -874,13 +874,22 @@ pub async fn yt_latest(data_dir: &Path, ytdlp: &Path, url: &str, max: usize, lan
 pub async fn yt_flat(data_dir: &Path, ytdlp: &Path, url: &str, from: usize, to: usize, lang: Option<&str>) -> Result<serde_json::Value> {
     let mut args: Vec<String> = vec!["-J".into(), "--flat-playlist".into(), "--playlist-items".into(), format!("{from}:{to}")];
     if let Some(l) = lang {
-        args.extend(["--extractor-args".into(), format!("youtube:lang={l}")]);
+        args.extend(["--extractor-args".into(), format!("youtube:lang={}", youtube_lang(l))]);
     }
     args.push(url.into());
     let mut quiet = |_p: f64| {};
     let out = run_ytdlp(data_dir, ytdlp, &args, None, &mut quiet).await?;
     let json = out.iter().find(|l| l.starts_with('{')).ok_or_else(|| anyhow!(crate::i18n::t("aucun résultat", "no results")))?;
     Ok(serde_json::from_str(json)?)
+}
+
+/// YouTube calls the Filipino locale `fil`, while Lumen uses the ISO 639-1
+/// code `tl` for Tagalog throughout its language and dictionary data.
+fn youtube_lang(lang: &str) -> &str {
+    match lang {
+        "tl" => "fil",
+        other => other,
+    }
 }
 
 /// Adresses de lecture directe d'une vidéo (ou du seul son), pour la regarder

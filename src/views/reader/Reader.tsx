@@ -105,6 +105,7 @@ export function Reader() {
   const [cursor, setCursor] = useState(-1);
   const [illum, setIllum] = useState(false);
   const [complete, setComplete] = useState<null | { read: number; known: number; lingqs: number; secs: number; next: number | null }>(null);
+  const [markingRemaining, setMarkingRemaining] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [simplify, setSimplify] = useState(false);
   const [glowKeys, setGlowKeys] = useState<Set<string>>(new Set());
@@ -298,6 +299,55 @@ export function Reader() {
   }, [mediaPlaying]);
 
   const statusOf = useCallback((k: string): number => terms[k]?.status ?? 0, [terms]);
+
+  // Words that were never opened remain new (blue). Keep this list unique so the
+  // completion action reports and marks each vocabulary item only once.
+  const remainingKeys = useMemo(() => {
+    const seen = new Set<string>();
+    const keys: string[] = [];
+    for (const token of tokens) {
+      if (token.w && statusOf(token.k) === 0 && !seen.has(token.k)) {
+        seen.add(token.k);
+        keys.push(token.k);
+      }
+    }
+    return keys;
+  }, [tokens, statusOf]);
+
+  const markRemainingKnown = useCallback(async () => {
+    if (!lesson || markingRemaining || !remainingKeys.length) return;
+    setMarkingRemaining(true);
+    try {
+      const added = await api().termsMarkKnown(lesson.lang, remainingKeys, 0);
+      const updatedAt = Date.now() / 1000;
+      setTerms((prev) => {
+        const next = { ...prev };
+        for (const k of remainingKeys) {
+          const existing = next[k];
+          next[k] = existing
+            ? { ...existing, status: 4, updated_at: updatedAt }
+            : { term: k, status: 4, translation: "", note: "", lemma: "", context: "", updated_at: updatedAt };
+        }
+        return next;
+      });
+      session.current.known += added;
+      setComplete((prev) => (prev ? { ...prev, known: prev.known + added } : prev));
+      void refreshKnown();
+      if (added) {
+        toast(
+          t(
+            `${added} mot${added > 1 ? "s" : ""} restant${added > 1 ? "s" : ""} marqué${added > 1 ? "s" : ""} comme connu${added > 1 ? "s" : ""}`,
+            `${formatNumber(added)} remaining ${added === 1 ? "word" : "words"} marked known`,
+          ),
+          "light",
+        );
+      }
+    } catch (e) {
+      toast(errorText(e), "error");
+    } finally {
+      setMarkingRemaining(false);
+    }
+  }, [lesson, markingRemaining, remainingKeys, refreshKnown, toast]);
 
   // ---------- reprise : mot atteint, écrit au plus une fois par seconde ----------
   useEffect(() => {
@@ -1622,7 +1672,15 @@ export function Reader() {
                         )}
                   </p>
                 )}
-                <div style={{ display: "flex", gap: 10 }}>
+                {remainingKeys.length > 0 && (
+                  <button className="btn soft complete-bulk" onClick={() => void markRemainingKnown()} disabled={markingRemaining} aria-busy={markingRemaining}>
+                    <Icon name="check" size={16} />
+                    {markingRemaining
+                      ? t("Marquage…", "Marking…")
+                      : t(`Marquer les ${formatNumber(remainingKeys.length)} mots restants comme connus`, `Mark the ${formatNumber(remainingKeys.length)} remaining words as known`)}
+                  </button>
+                )}
+                <div className="complete-actions">
                   <button className="btn outline lg" onClick={() => go("library")}>
                     {t("Bibliothèque", "Library")}
                   </button>
