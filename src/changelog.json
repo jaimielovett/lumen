@@ -2,6 +2,39 @@
   "_lisezmoi": "Nouveautés montrées après chaque mise à jour (components/News.tsx) et notes de publication. Ajouter ce qui change sous la version \"next\" au fil du travail ; « Publier une version » lui donne son numéro et sa date. Icônes : noms de components/Icon.tsx. Actions : \"tour\" (visite guidée), \"guide\", \"settings:<page>\" (profile, general, langs, reading, voice, discover, podcasts, ai, videos, backup, storage, lingq, about), \"import:<onglet>\" (text, link, file, media, podcast), \"view:<vue>\" (library, discover, playlists, chat, vocab, progress).",
   "releases": [
     {
+      "version": "1.1.1",
+      "date": "2026-10-12",
+      "title": { "fr": "Découvrir sans limite de niveau", "en": "Discover across all levels" },
+      "items": [
+        {
+          "icon": "globe",
+          "title": { "fr": "Tous les niveaux dans Découvrir", "en": "All levels in Discover" },
+          "body": {
+            "fr": "Choisissez « Tout » pour voir les vidéos, podcasts et articles de tous les niveaux. Ce choix est mémorisé pour chaque langue ; les pastilles et les nouveautés suivent le filtre choisi.",
+            "en": "Choose “All” to see videos, podcasts and articles across every level. Your choice is saved for each language; badges and new-find notifications follow the selected filter."
+          },
+          "action": "view:discover"
+        },
+        {
+          "icon": "check",
+          "title": { "fr": "Marquer les mots restants comme connus", "en": "Mark remaining words as known" },
+          "body": {
+            "fr": "À la fin d'une leçon, un bouton permet de marquer tous les mots encore nouveaux comme connus. Chaque mot est compté une seule fois et le bilan se met à jour immédiatement.",
+            "en": "At the end of a lesson, a button lets you mark all remaining new words as known. Each word is counted once and the completion summary updates immediately."
+          }
+        },
+        {
+          "icon": "video",
+          "title": { "fr": "Les vidéos tagalog dans Découvrir", "en": "Tagalog videos in Discover" },
+          "body": {
+            "fr": "Les listes de vidéos utilisent désormais le code de langue attendu par YouTube pour le tagalog. Si les outils YouTube ne peuvent pas être installés, Découvrir signale l'erreur.",
+            "en": "Video lists now use YouTube's expected language code for Tagalog. Discover also reports an error if the YouTube tools cannot be installed."
+          },
+          "action": "view:discover"
+        }
+      ]
+    },
+    {
       "version": "1.1.0",
       "date": "2026-10-12",
       "title": { "fr": "Tagalog et lecture plus fluide", "en": "Tagalog and smoother reading" },
