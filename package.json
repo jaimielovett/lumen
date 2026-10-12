@@ -10,7 +10,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "node --test scripts/release.test.mjs && tsc -b && vite build",
     "preview": "vite preview",
     "sidecar": "node scripts/build-sidecar.mjs",
     "tauri": "tauri",

@@ -4,6 +4,8 @@ Releases and automatic updates belong to `jaimielovett/lumen`. The original proj
 
 The fork's updater signing key is stored outside the repository at `~/.tauri/lumen-jaimielovett-updater.key`. Back up this file securely. Keep the same key for future releases, and never commit or upload it to GitHub. Its public key is in `src-tauri/tauri.conf.json`.
 
+Every production frontend build checks the update feed and public signing key, including platform-specific Tauri overrides. A build fails if an upstream merge replaces either with upstream's update configuration. Review this check explicitly if the fork's signing identity ever needs to change.
+
 ## Prepare the version
 
 Add bilingual release notes under `"next"` in `src/changelog.json`, then run:

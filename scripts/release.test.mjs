@@ -1,12 +1,30 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, isAbsolute } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const script = fileURLToPath(new URL("release.mjs", import.meta.url));
+
+// Identité de mise à jour du fork, publiée avec la version 1.1.0.
+// Une fusion amont ne doit changer ni le dépôt consulté ni la clé de confiance.
+const forkFeed = "https://github.com/jaimielovett/lumen/releases/latest/download/latest.json";
+const forkPublicKey = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU1MTkxRDQ2NjUwQjVCQzQKUldURVd3dGxSaDBaNVJ4Z1hFQ0diYnAzREc3Zlh2Qjh4TUlnQi8vSVlSclA0ZjVVWVAwRWhMdG4K";
+
+test("production and platform configurations preserve the fork's update feed and signing identity", () => {
+  const configDir = fileURLToPath(new URL("../src-tauri/", import.meta.url));
+  const base = JSON.parse(readFileSync(join(configDir, "tauri.conf.json"), "utf8"));
+  assert.deepEqual(base.plugins.updater.endpoints, [forkFeed]);
+  assert.equal(base.plugins.updater.pubkey, forkPublicKey);
+  for (const name of readdirSync(configDir).filter((name) => /^tauri\..+\.conf\.json$/.test(name))) {
+    const platform = JSON.parse(readFileSync(join(configDir, name), "utf8"));
+    const updater = { ...base.plugins.updater, ...platform.plugins?.updater };
+    assert.deepEqual(updater.endpoints, [forkFeed], `${name} must use the fork's feed`);
+    assert.equal(updater.pubkey, forkPublicKey, `${name} must use the fork's signing key`);
+  }
+});
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), "lumen-release-"));
