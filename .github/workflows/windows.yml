@@ -29,9 +29,19 @@ jobs:
         with:
           arch: x64
 
+      - uses: actions/cache/restore@v4
+        id: rust-cache
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: windows-ninja-vulkan-1.4.357.0-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: windows-ninja-vulkan-1.4.357.0-
+
       # Vulkan (l'IA sur la carte graphique) : en-têtes, glslc et SPIR-V du SDK officiel.
-      # Sa bibliothèque vulkan-1.lib est remplacée par une bibliothèque vide, comme dans
-      # scripts/build-windows.mjs : Lumen fournit lui-même les fonctions de Vulkan qu'il
+      # Sa bibliothèque vulkan-1.lib est remplacée par une bibliothèque sans import :
+      # Lumen fournit lui-même les fonctions de Vulkan qu'il
       # appelle et n'ouvre vulkan-1.dll que si elle est là (src-tauri/src/vulkan.rs).
       - name: Vulkan
         env:
@@ -40,7 +50,14 @@ jobs:
           curl.exe -o $env:RUNNER_TEMP/VulkanSDK-Installer.exe -L "https://sdk.lunarg.com/sdk/download/${env:VULKAN_VERSION}/windows/vulkansdk-windows-X64-${env:VULKAN_VERSION}.exe"
           & "$env:RUNNER_TEMP\VulkanSDK-Installer.exe" --accept-licenses --default-answer --confirm-command install
           $sdk = "C:\VulkanSDK\${env:VULKAN_VERSION}"
-          [IO.File]::WriteAllText("$sdk\Lib\vulkan-1.lib", "!<arch>`n")
+          # link.exe refuse l'archive GNU vide acceptée par le compilateur croisé.
+          # Un objet COFF sans fonction Vulkan donne une bibliothèque MSVC valide.
+          $stub = Join-Path $env:RUNNER_TEMP 'lumen-vulkan-stub'
+          'void lumen_vulkan_link_placeholder(void) {}' | Set-Content -Encoding ascii "$stub.c"
+          cl.exe /nologo /c /Zl "/Fo$stub.obj" "$stub.c"
+          if ($LASTEXITCODE -ne 0) { throw 'Vulkan stub compilation failed.' }
+          lib.exe /nologo "/OUT:$sdk\Lib\vulkan-1.lib" "$stub.obj"
+          if ($LASTEXITCODE -ne 0) { throw 'Vulkan stub library creation failed.' }
           Add-Content $env:GITHUB_ENV "VULKAN_SDK=$sdk"
           Add-Content $env:GITHUB_PATH "$sdk\bin"
 
@@ -64,8 +81,31 @@ jobs:
           $unsignedConfig = Join-Path $env:RUNNER_TEMP 'tauri-unsigned.json'
           '{"bundle":{"createUpdaterArtifacts":false}}' | Set-Content -Encoding utf8 $unsignedConfig
           npx tauri build --bundles nsis --config $unsignedConfig
+          if ($LASTEXITCODE -ne 0) { throw 'Installer build failed.' }
+
+      - name: Dépendances DLL
+        run: |
+          foreach ($exe in 'src-tauri/target/release/lumen.exe', 'src-tauri/target/release/lumen-whisper.exe') {
+            $imports = dumpbin.exe /DEPENDENTS $exe
+            if ($LASTEXITCODE -ne 0) { throw "Cannot inspect $exe" }
+            $imports
+            # Les importations différées de Media Foundation sont autorisées.
+            $mandatoryImports = (($imports -join "`n") -split '(?i)Image has .*delay.*dependencies:')[0]
+            if ($mandatoryImports -match '(?i)\b(vulkan-1|mfplat|mfreadwrite|vcruntime140\w*|msvcp140\w*)\.dll\b') {
+              throw "$exe requires a DLL that should be optional or statically linked."
+            }
+          }
 
       - uses: actions/upload-artifact@v4
         with:
           name: lumen-windows
           path: src-tauri/target/release/bundle/nsis/*.exe
+
+      - uses: actions/cache/save@v4
+        if: always() && steps.rust-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: windows-ninja-vulkan-1.4.357.0-${{ hashFiles('src-tauri/Cargo.lock') }}
