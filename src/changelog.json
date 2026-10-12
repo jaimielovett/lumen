@@ -49,6 +49,15 @@
             "en": "This release also includes media duration on covers, transcript punctuation and bulk lesson deletion from Lumen 1.0.1."
           },
           "action": "view:library"
+        },
+        {
+          "icon": "speaker",
+          "title": { "fr": "Les voix Windows dans toutes les écritures", "en": "Windows voices across writing systems" },
+          "body": {
+            "fr": "Les voix naturelles reçoivent correctement les textes en japonais, russe ou arabe, même si votre Windows utilise un autre alphabet.",
+            "en": "Natural voices receive Japanese, Russian and Arabic text correctly, even when Windows uses a different writing system."
+          },
+          "only": "windows"
         }
       ]
     },

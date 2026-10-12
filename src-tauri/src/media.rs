@@ -1187,8 +1187,10 @@ mod tests {
         let song = (0..12).map(|v| (0..6).map(|i| format!("mot{v}x{i}")).collect::<Vec<_>>().join(" ")).collect::<Vec<_>>().join("\n");
         assert_eq!(longest_run(&song, "it"), 6);
         // japonais, sans espaces
-        let ja = "今日はとても暑いですね".repeat(6);
-        let jw: Vec<WWord> = (0..6).map(|i| ww(&format!("今日はとても暑いですね{}", if i == 2 { "。" } else { "" }), i as f64, i as f64 + 0.9)).collect();
+        // La segmentation lexicale du japonais produit moins de mots que de caractères.
+        let ja = "今日はとても暑いですね".repeat(12);
+        assert!(longest_run(&ja, "ja") > RUN_ON_WORDS);
+        let jw: Vec<WWord> = (0..12).map(|i| ww(&format!("今日はとても暑いですね{}", if i == 2 { "。" } else { "" }), i as f64, i as f64 + 0.9)).collect();
         let out = borrow_punctuation(&ja, "ja", &jw);
         assert_eq!(out.matches('。').count(), 1);
         assert_eq!(text::word_keys(&out, "ja"), text::word_keys(&ja, "ja"));

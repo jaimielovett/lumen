@@ -127,18 +127,35 @@ const UTF8_MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="
 /// l'arabe y deviendraient des « ? »). Son manifeste est remplacé par un autre
 /// qui lui demande l'UTF-8 (Windows 10 de mai 2019 et après).
 pub fn utf8_manifest(exe: &Path) -> Result<()> {
-    use windows::Win32::System::LibraryLoader::{BeginUpdateResourceW, EndUpdateResourceW, UpdateResourceW};
+    use windows::core::BOOL;
+    use windows::Win32::Foundation::{FreeLibrary, HMODULE};
+    use windows::Win32::System::LibraryLoader::{BeginUpdateResourceW, EndUpdateResourceW, EnumResourceLanguagesW, LoadLibraryExW, UpdateResourceW, LOAD_LIBRARY_AS_DATAFILE, LOAD_LIBRARY_AS_IMAGE_RESOURCE};
+    unsafe extern "system" fn language(_: HMODULE, _: PCWSTR, _: PCWSTR, lang: u16, list: isize) -> BOOL {
+        unsafe { (*(list as *mut Vec<u16>)).push(lang); }
+        true.into()
+    }
     // RT_MANIFEST (24), ressource n° 1 : le manifeste d'un programme
     let kind = PCWSTR(24 as *const u16);
     let id = PCWSTR(1 as *const u16);
     let path = HSTRING::from(exe.as_os_str());
     unsafe {
-        let h = BeginUpdateResourceW(PCWSTR(path.as_ptr()), false)?;
-        // l'ancien manifeste, en langue neutre ou en anglais
-        for lang in [0u16, 1033] {
-            let _ = UpdateResourceW(h, kind, id, lang, None, 0);
+        // Remplacer seulement les langues présentes : supprimer une ressource absente
+        // peut faire échouer EndUpdateResource, même si UpdateResource l'avait accepté.
+        let module = LoadLibraryExW(PCWSTR(path.as_ptr()), None, LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE)?;
+        let mut langs: Vec<u16> = Vec::new();
+        let _ = EnumResourceLanguagesW(Some(module), kind, id, Some(language), &mut langs as *mut _ as isize);
+        FreeLibrary(module)?;
+        if langs.is_empty() {
+            langs.push(0);
         }
-        let res = UpdateResourceW(h, kind, id, 1033, Some(UTF8_MANIFEST.as_ptr() as *const _), UTF8_MANIFEST.len() as u32);
+        let h = BeginUpdateResourceW(PCWSTR(path.as_ptr()), false)?;
+        let mut res = Ok(());
+        for lang in langs {
+            res = UpdateResourceW(h, kind, id, lang, Some(UTF8_MANIFEST.as_ptr() as *const _), UTF8_MANIFEST.len() as u32);
+            if res.is_err() {
+                break;
+            }
+        }
         EndUpdateResourceW(h, res.is_err())?;
         res?;
     }
@@ -246,6 +263,7 @@ mod tests {
         let exe = std::env::temp_dir().join(format!("lumen-manifest-{}.exe", std::process::id()));
         std::fs::copy(std::env::current_exe().unwrap(), &exe).unwrap();
         utf8_manifest(&exe).expect("manifeste remplacé");
+        utf8_manifest(&exe).expect("manifeste remplacé une seconde fois");
         let data = std::fs::read(&exe).unwrap();
         assert!(data.windows(22).any(|w| w == b"UTF-8</activeCodePage>"));
         let _ = std::fs::remove_file(&exe);

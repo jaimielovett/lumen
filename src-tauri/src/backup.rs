@@ -1620,9 +1620,9 @@ mod tests {
         let cb = live.lock();
         let l = db::lesson_get(&cb, id).unwrap();
         // audio et couverture rapatriés sur ce Mac, vidéo absente de la sauvegarde
-        assert_eq!(l.media_path, Some(b.join("media/1.m4a").display().to_string()));
+        assert_eq!(l.media_path, Some(b.join("media").join("1.m4a").display().to_string()));
         assert_eq!(fs::read(b.join("media/1.m4a")).unwrap(), b"audio");
-        assert_eq!(l.cover_path, Some(b.join("media/1.cover.jpg").display().to_string()));
+        assert_eq!(l.cover_path, Some(b.join("media").join("1.cover.jpg").display().to_string()));
         assert_eq!(l.video_path, None);
         assert_eq!(db::stats(&cb, "it").unwrap().phrases, 1);
         assert_eq!(db::setting(&cb, "lingq_key").as_deref(), Some("autre"));
