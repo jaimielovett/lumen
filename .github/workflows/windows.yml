@@ -12,6 +12,9 @@ jobs:
   windows:
     runs-on: windows-latest
     timeout-minutes: 90
+    env:
+      # Ninja ordonne correctement la compilation du générateur de shaders Vulkan.
+      CMAKE_GENERATOR: Ninja
     steps:
       - uses: actions/checkout@v4
 
@@ -21,6 +24,10 @@ jobs:
           cache: npm
 
       - uses: dtolnay/rust-toolchain@stable
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
       # Vulkan (l'IA sur la carte graphique) : en-têtes, glslc et SPIR-V du SDK officiel.
       # Sa bibliothèque vulkan-1.lib est remplacée par une bibliothèque vide, comme dans
@@ -40,15 +47,23 @@ jobs:
       - name: Dépendances
         run: npm ci
 
+      - name: Outils de publication
+        run: node --test scripts/release.test.mjs
+
+      # Tauri vérifie ce binaire dès la compilation de l'app, même pour les tests.
+      - name: Transcription
+        run: node scripts/build-sidecar.mjs
+
       - name: Tests
         working-directory: src-tauri
-        run: cargo test --lib --release
+        run: cargo test --locked --lib --release
 
       - name: Installateur
-        shell: bash
+        shell: pwsh
         run: |
-          node scripts/build-sidecar.mjs
-          npx tauri build --bundles nsis --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          $unsignedConfig = Join-Path $env:RUNNER_TEMP 'tauri-unsigned.json'
+          '{"bundle":{"createUpdaterArtifacts":false}}' | Set-Content -Encoding utf8 $unsignedConfig
+          npx tauri build --bundles nsis --config $unsignedConfig
 
       - uses: actions/upload-artifact@v4
         with:
