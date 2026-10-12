@@ -3,7 +3,9 @@
 **Learn languages by reading and listening to what you love, with an AI that runs on your own computer.**
 A desktop app for Mac (Apple silicon) and Windows 10/11, in the spirit of LingQ.
 
-**[Download Lumen](https://github.com/LivingTwice/lumen/releases/latest)**: a DMG for Mac, an installer for Windows. Updates then install by themselves.
+This is a personal fork of **[LivingTwice/Lumen](https://github.com/LivingTwice/lumen)**, with Tagalog support, playlist imports and reader improvements.
+
+**[Download this fork for Windows](https://github.com/jaimielovett/lumen/releases/latest)**. Its updates come from this repository. For the original Lumen builds, including Mac, see **[upstream releases](https://github.com/LivingTwice/lumen/releases/latest)**.
 
 <p align="center">
   <img src="docs/screenshots/reader.webp" alt="An Italian lesson in Lumen: words highlighted by status, the word “neanche” selected, and on the right its meaning in this sentence, the dictionary entry and its learning status; the audio player at the bottom">
@@ -16,12 +18,12 @@ A desktop app for Mac (Apple silicon) and Windows 10/11, in the spirit of LingQ.
 - **Listen**: the “lantern” follows every word of the audio or video, to the word (Whisper timings). A natural voice pronounces words and can create the audio of any text lesson. Interactive full-screen subtitles.
 - **Import anything you enjoy**: text, web pages, EPUB, PDF, subtitles, audio and video files, YouTube, podcasts, Spotify, TikTok links and more, transcribed on your computer (Whisper and Qwen3-ASR). Import your words and lessons from LingQ.
 - **Light on your disk**: on a Mac, imported videos and sounds are re-encoded by the Mac's own video chip while Lumen transcribes them, taking 40 to about 75% less space, with no extra wait and without shifting the sound by a single millisecond. Online videos arrive in the lightest format your computer can play.
-- **Discover**: recent videos, podcasts, news and songs in 31 languages, sorted by CEFR level (A1 to C1) according to the words you know. Search YouTube, Dailymotion, podcasts, songs (with timed lyrics) and Wikipedia, and preview anything before making it a lesson.
+- **Discover**: recent videos, podcasts, news and songs in 32 languages, sorted by CEFR level (A1 to C1) according to the words you know. Search YouTube, Dailymotion, podcasts, songs (with timed lyrics) and Wikipedia, and preview anything before making it a lesson.
 - **Chat**: a language tutor that knows your lesson, running on your computer (Qwen3.5), with optional thinking.
 - **Custom podcasts**: written and performed by Gemini at your level, with the words you're learning (optional, with your own key).
 - **Progress**: study time, words read, streaks, a daily goal, a calendar.
 - **Backup** to iCloud Drive, Dropbox, Google Drive, OneDrive or a disk, with no server and no account.
-- **31 languages to study**, each with an offline dictionary. The interface is in English and French.
+- **32 languages to study**, each with an offline dictionary. The interface is in English and French. Tagalog has optional Google Cloud Text-to-Speech with your own key; text sent for pronunciation goes to Google.
 
 ## A look around
 

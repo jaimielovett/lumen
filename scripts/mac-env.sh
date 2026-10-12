@@ -51,7 +51,7 @@ npm install --no-audit --no-fund >/dev/null || fail "npm install a échoué."
 echo "  ok"
 
 step "Clé de signature des mises à jour"
-KEY="$HOME/.tauri/lumen-updater.key"
+KEY="$HOME/.tauri/lumen-jaimielovett-updater.key"
 if [ ! -f "$KEY" ]; then
   mkdir -p "$HOME/.tauri"
   npx tauri signer generate --ci -p "" -w "$KEY" >/dev/null || fail "La clé n'a pas pu être créée."

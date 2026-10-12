@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Lumen",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "identifier": "app.lumen.reader",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -94,9 +94,9 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDYxOTQ3Mjg1NjEzOTA1RkIKUldUN0JUbGhoWEtVWVNtTUsyZ2FMbnpjVmluU3d1eHkrUGU4ZGo5bUVwTitoUi85bHBjTllzWTIK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU1MTkxRDQ2NjUwQjVCQzQKUldURVd3dGxSaDBaNVJ4Z1hFQ0diYnAzREc3Zlh2Qjh4TUlnQi8vSVlSclA0ZjVVWVAwRWhMdG4K",
       "endpoints": [
-        "https://github.com/LivingTwice/lumen/releases/latest/download/latest.json"
+        "https://github.com/jaimielovett/lumen/releases/latest/download/latest.json"
       ]
     }
   }

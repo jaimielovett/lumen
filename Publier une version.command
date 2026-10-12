@@ -1,24 +1,20 @@
 #!/bin/bash
 # Publie une nouvelle version de Lumen : compilation (Mac, puis Windows sur ce
 # même Mac), signature, DMG et installateur Windows, envoi du code et de la version
-# sur GitHub (dépôt LivingTwice/lumen). Les Lumen installés, sur Mac comme sur PC,
+# sur GitHub (dépôt jaimielovett/lumen). Les copies de ce fork, sur Mac comme sur PC,
 # la proposeront d'eux-mêmes. Il faut être connecté au compte GitHub du dépôt et
-# avoir la clé ~/.tauri/lumen-updater.key : personne d'autre ne peut publier.
+# avoir la clé ~/.tauri/lumen-jaimielovett-updater.key : personne d'autre ne peut publier.
 cd "$(dirname "$0")"
 LOG="$(pwd)/publication.log"
 exec > >(tee "$LOG") 2>&1
 echo ""
 echo "  ☀  Lumen : publier une nouvelle version"
 echo "  ───────────────────────────────────────"
-OWNER="LivingTwice"
+OWNER="jaimielovett"
 SOURCE="$OWNER/lumen"
-# ancien dépôt des versions : les Lumen jusqu'à 0.7.0 y lisent leurs mises à jour et
-# leurs dictionnaires. Plus aucune version n'y est publiée, mais il doit rester public
-# (ni privé, ni archivé) : son latest.json renvoie ces Lumen vers chaque nouvelle version.
-RELAY="$OWNER/lumen-releases"
 # seule la clé d'origine signe des mises à jour que les Lumen installés acceptent : sans
 # elle, s'arrêter avant mac-env.sh (qui en créerait une nouvelle, refusée par tous)
-KEY="$HOME/.tauri/lumen-updater.key"
+KEY="$HOME/.tauri/lumen-jaimielovett-updater.key"
 if [ ! -f "$KEY" ]; then
   echo ""
   echo "✗ Clé de signature introuvable ($KEY) : seul l'ordinateur qui la garde peut publier une version."
@@ -90,15 +86,6 @@ for d in "$BUNDLE"/dmg/Lumen_${VERSION}_*.dmg; do [ -f "$d" ] && ASSETS+=("$d");
 WINSETUP="$BUNDLE/release/Lumen_${VERSION}_x64-setup.exe"
 [ "$WINDOWS" = 1 ] && [ -f "$WINSETUP" ] && ASSETS+=("$WINSETUP")
 gh release create "v$VERSION" "${ASSETS[@]}" --repo "$SOURCE" --target "$(git rev-parse HEAD)" --title "Lumen $VERSION" --notes "$NOTES" --latest || fail "La publication a échoué."
-
-step "Relais pour les Lumen jusqu'à 0.7.0"
-# ils lisent l'ancien dépôt : le latest.json de sa dernière version les envoie vers celle-ci
-RELAY_TAG="$(gh release view --repo "$RELAY" --json tagName --jq .tagName 2>/dev/null)"
-if [ -n "$RELAY_TAG" ] && gh release upload "$RELAY_TAG" "$BUNDLE/release/latest.json" --repo "$RELAY" --clobber >/dev/null 2>&1; then
-  echo "  ok"
-else
-  echo "  (relais non mis à jour : les Lumen jusqu'à 0.7.0 ne verront pas cette version)"
-fi
 
 mkdir -p Distribution
 cp "$BUNDLE"/dmg/Lumen_${VERSION}_*.dmg Distribution/ 2>/dev/null

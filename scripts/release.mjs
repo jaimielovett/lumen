@@ -2,8 +2,8 @@
 //   node scripts/release.mjs bump 0.2.0
 //   node scripts/release.mjs preview 0.2.0   (notes de la version, tirées de src/changelog.json)
 //   node scripts/release.mjs stamp 0.2.0     (la version "next" du journal prend ce numéro et la date du jour)
-//   node scripts/release.mjs manifest 0.2.0 "Notes" aarch64 Proprio/depot
-//     (avec la version Windows si scripts/build-windows.mjs l'a compilée et signée)
+//   node scripts/release.mjs manifest 0.2.0 "Notes" aarch64 Proprio/depot [installateur.exe]
+//     (Mac, Windows ou les deux, seulement si les paquets sont signés)
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
@@ -33,6 +33,12 @@ if (cmd === "bump") {
   const pkg = JSON.parse(readFileSync("package.json", "utf8"));
   pkg.version = version;
   writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
+  if (existsSync("package-lock.json")) {
+    const lock = JSON.parse(readFileSync("package-lock.json", "utf8"));
+    lock.version = version;
+    if (lock.packages?.[""]) lock.packages[""].version = version;
+    writeFileSync("package-lock.json", JSON.stringify(lock, null, 2) + "\n");
+  }
   const conf = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
   conf.version = version;
   writeFileSync("src-tauri/tauri.conf.json", JSON.stringify(conf, null, 2) + "\n");
@@ -41,6 +47,13 @@ if (cmd === "bump") {
     `$1"${version}"`,
   );
   writeFileSync("src-tauri/Cargo.toml", cargo);
+  if (existsSync("src-tauri/Cargo.lock")) {
+    const lock = readFileSync("src-tauri/Cargo.lock", "utf8").replace(
+      /(\[\[package\]\]\s*\nname = "lumen"\s*\nversion = )"[^"]+"/,
+      `$1"${version}"`,
+    );
+    writeFileSync("src-tauri/Cargo.lock", lock);
+  }
   console.log(`  ok : ${version}`);
 } else if (cmd === "preview") {
   const r = release(version);
@@ -50,7 +63,8 @@ if (cmd === "bump") {
   if (existsSync(CHANGELOG)) {
     const text = readFileSync(CHANGELOG, "utf8");
     const d = new Date();
-    const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const day = rest[0] ?? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error("Date invalide (attendu : AAAA-MM-JJ).");
     const next = text.replace(/"version":\s*"next",(\s*)"date":\s*"[^"]*"/, `"version": "${version}",$1"date": "${day}"`);
     if (next !== text) {
       writeFileSync(CHANGELOG, next);
@@ -58,7 +72,8 @@ if (cmd === "bump") {
     }
   }
 } else if (cmd === "manifest") {
-  const [plain, arch, repo] = rest;
+  const [plain, arch, repo, windowsSetup] = rest;
+  if (!plain || !arch || !repo) throw new Error("Notes, architecture et dépôt requis.");
   // l'app affiche les titres des nouveautés dans sa carte de mise à jour, dans sa langue
   // Le manifeste est le même pour Mac et Windows : seulement les nouveautés des deux
   // systèmes (une nouveauté écrite pour chacun, `only`, y figure une fois).
@@ -69,36 +84,37 @@ if (cmd === "bump") {
   const bundle = "src-tauri/target/release/bundle";
   const tar = join(bundle, "macos", "Lumen.app.tar.gz");
   const sig = tar + ".sig";
-  if (!existsSync(tar) || !existsSync(sig)) {
-    console.error("Paquet de mise à jour introuvable (Lumen.app.tar.gz et .sig).");
-    process.exit(1);
-  }
   const outDir = join(bundle, "release");
   mkdirSync(outDir, { recursive: true });
   const name = `Lumen_${version}_${arch}.app.tar.gz`;
-  copyFileSync(tar, join(outDir, name));
   const manifest = {
     version,
     notes,
     pub_date: new Date().toISOString(),
-    platforms: {
-      [`darwin-${arch}`]: {
-        signature: readFileSync(sig, "utf8").trim(),
-        url: `https://github.com/${repo}/releases/download/v${version}/${name}`,
-      },
-    },
+    platforms: {},
   };
-  console.log(`  ok : ${name}`);
+  if (!windowsSetup && existsSync(tar) && existsSync(sig)) {
+    copyFileSync(tar, join(outDir, name));
+    manifest.platforms[`darwin-${arch}`] = {
+      signature: readFileSync(sig, "utf8").trim(),
+      url: `https://github.com/${repo}/releases/download/v${version}/${name}`,
+    };
+    console.log(`  ok : ${name}`);
+  }
   // la version Windows (scripts/build-windows.mjs), si elle est compilée et signée pour la mise à jour
   const winName = `Lumen_${version}_x64-setup.exe`;
-  const winExe = join("src-tauri/target/windows/x86_64-pc-windows-msvc/release/bundle/nsis", winName);
+  const winExe = windowsSetup ?? join("src-tauri/target/windows/x86_64-pc-windows-msvc/release/bundle/nsis", winName);
   if (existsSync(winExe) && existsSync(winExe + ".sig")) {
     copyFileSync(winExe, join(outDir, winName));
+    copyFileSync(winExe + ".sig", join(outDir, winName + ".sig"));
     manifest.platforms["windows-x86_64"] = {
       signature: readFileSync(winExe + ".sig", "utf8").trim(),
       url: `https://github.com/${repo}/releases/download/v${version}/${winName}`,
     };
     console.log(`  ok : ${winName}`);
+  }
+  if (!Object.keys(manifest.platforms).length) {
+    throw new Error("Aucun paquet signé pour cette version.");
   }
   writeFileSync(join(outDir, "latest.json"), JSON.stringify(manifest, null, 2) + "\n");
 } else {

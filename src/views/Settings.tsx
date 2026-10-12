@@ -36,7 +36,7 @@ import { useUser } from "../lib/user";
 
 const EASE = [0.2, 0.8, 0.2, 1] as const;
 /** Dépôt public du code de Lumen (GPL-3.0). */
-const SOURCE_URL = "https://github.com/LivingTwice/lumen";
+const SOURCE_URL = "https://github.com/jaimielovett/lumen";
 
 interface Tab {
   id: SettingsTab;

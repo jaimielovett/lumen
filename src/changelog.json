@@ -2,6 +2,57 @@
   "_lisezmoi": "Nouveautés montrées après chaque mise à jour (components/News.tsx) et notes de publication. Ajouter ce qui change sous la version \"next\" au fil du travail ; « Publier une version » lui donne son numéro et sa date. Icônes : noms de components/Icon.tsx. Actions : \"tour\" (visite guidée), \"guide\", \"settings:<page>\" (profile, general, langs, reading, voice, discover, podcasts, ai, videos, backup, storage, lingq, about), \"import:<onglet>\" (text, link, file, media, podcast), \"view:<vue>\" (library, discover, playlists, chat, vocab, progress).",
   "releases": [
     {
+      "version": "1.1.0",
+      "date": "2026-10-12",
+      "title": { "fr": "Tagalog et lecture plus fluide", "en": "Tagalog and smoother reading" },
+      "items": [
+        {
+          "icon": "globe",
+          "title": { "fr": "Apprendre le tagalog", "en": "Learn Tagalog" },
+          "body": {
+            "fr": "Le tagalog rejoint les langues proposées, avec un dictionnaire hors ligne intégré, une première leçon et des chaînes vidéo dans Découvrir.",
+            "en": "Tagalog joins the available languages, with a bundled offline dictionary, a starter lesson and video channels in Discover."
+          },
+          "action": "settings:langs"
+        },
+        {
+          "icon": "speaker",
+          "title": { "fr": "Une voix naturelle pour le tagalog", "en": "A natural voice for Tagalog" },
+          "body": {
+            "fr": "Avec votre clé Google Cloud Text-to-Speech, prononcez les mots tagalog et créez l'audio d'une leçon. La clé se configure et se vérifie dans Réglages › Voix ; le texte à prononcer est envoyé à Google.",
+            "en": "Use your Google Cloud Text-to-Speech key to pronounce Tagalog words and create lesson audio. Configure and check the key in Settings › Voice; the text to pronounce is sent to Google."
+          },
+          "action": "settings:voice"
+        },
+        {
+          "icon": "playlist",
+          "title": { "fr": "Importer dans une playlist", "en": "Import into a playlist" },
+          "body": {
+            "fr": "Importez une nouvelle leçon directement depuis une playlist : elle y est ajoutée dès que l'import est terminé.",
+            "en": "Import a new lesson directly from a playlist: it is added there when the import finishes."
+          },
+          "action": "view:playlists"
+        },
+        {
+          "icon": "book",
+          "title": { "fr": "Mieux lire le japonais", "en": "Read Japanese more comfortably" },
+          "body": {
+            "fr": "Le sens en contexte utilise une phrase japonaise plus pertinente autour du mot sélectionné, et la mise en page du lecteur laisse davantage de place au texte. La première page ne se coupe plus à côté d'une vidéo.",
+            "en": "Context meanings use a more relevant Japanese sentence around the selected word, and the reader layout gives the text more room. The first page also fits correctly beside a video."
+          }
+        },
+        {
+          "icon": "clock",
+          "title": { "fr": "Les nouveautés de Lumen 1.0.1", "en": "The improvements from Lumen 1.0.1" },
+          "body": {
+            "fr": "Cette version reprend aussi la durée des médias sur les couvertures, la ponctuation des transcriptions et la suppression de plusieurs leçons de Lumen 1.0.1.",
+            "en": "This release also includes media duration on covers, transcript punctuation and bulk lesson deletion from Lumen 1.0.1."
+          },
+          "action": "view:library"
+        }
+      ]
+    },
+    {
       "version": "1.0.1",
       "date": "2026-10-11",
       "title": { "fr": "Des leçons plus claires", "en": "Clearer lessons" },

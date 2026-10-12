@@ -1,5 +1,7 @@
 # CLAUDE.md : Lumen
 
+Cette copie est le fork personnel `jaimielovett/lumen`. Ses versions et ses mises à jour sont publiées dans ce fork, avec la clé `~/.tauri/lumen-jaimielovett-updater.key`. Voir `docs/releasing-fork.md` pour la publication Windows depuis GitHub Actions. Les adresses et la clé de publication de `LivingTwice` décrites plus bas concernent le projet d'origine ; elles ne servent pas à publier ce fork. Les dictionnaires restent téléchargés depuis le projet d'origine.
+
 Lumen est une application Mac pour apprendre les langues en lisant et en écoutant, dans l'esprit de LingQ. Toute l'intelligence tourne **en local** : traduction en contexte et chat par Qwen3.5 (llama.cpp), transcription par Qwen3-ASR (llama.cpp) et Whisper (whisper.cpp), sur la puce graphique (Metal sur Mac, Vulkan sous Windows), dictionnaires hors ligne. Deux exceptions, à la demande de l'apprenant et avec sa propre clé : les podcasts sur mesure, écrits et dits par Gemini (voir « Podcasts sur mesure »), et l'IA en ligne facultative qui peut remplacer Qwen3.5 pour la traduction et le chat (voir « IA en ligne » ; NVIDIA et Gemini la proposent gratuitement). Sur Mac (Apple Silicon) et sur Windows (10 et 11, x64, voir « Windows ») ; le web ensuite.
 
 - **Interface** : en français et en anglais, au choix (accueil et Réglages, réglage `ui_lang`). La langue de l'interface est aussi celle des traductions de l'IA, du chat et des dictionnaires.

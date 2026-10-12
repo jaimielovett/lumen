@@ -122,7 +122,7 @@ console.log("  ok");
 
 step("Lumen pour Windows (une vingtaine de minutes la première fois)");
 // la clé des mises à jour signe l'installateur ; sans elle, pas de signature (essai)
-const key = join(homedir(), ".tauri", "lumen-updater.key");
+const key = join(homedir(), ".tauri", "lumen-jaimielovett-updater.key");
 if (!env.TAURI_SIGNING_PRIVATE_KEY && existsSync(key)) {
   env.TAURI_SIGNING_PRIVATE_KEY = key;
   env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "";
