@@ -2,6 +2,21 @@
   "_lisezmoi": "Nouveautés montrées après chaque mise à jour (components/News.tsx) et notes de publication. Ajouter ce qui change sous la version \"next\" au fil du travail ; « Publier une version » lui donne son numéro et sa date. Icônes : noms de components/Icon.tsx. Actions : \"tour\" (visite guidée), \"guide\", \"settings:<page>\" (profile, general, langs, reading, voice, discover, podcasts, ai, videos, backup, storage, lingq, about), \"import:<onglet>\" (text, link, file, media, podcast), \"view:<vue>\" (library, discover, playlists, chat, vocab, progress).",
   "releases": [
     {
+      "version": "next",
+      "title": { "fr": "Des transcriptions qui vont jusqu'au bout", "en": "Transcripts that make it to the end" },
+      "items": [
+        {
+          "icon": "wave",
+          "title": { "fr": "Plus de transcription interrompue sans explication", "en": "No more transcripts stopping without explanation" },
+          "body": {
+            "fr": "Sur certaines vidéos, Whisper s'arrêtait net juste avant la fin, en calant les mots, et Lumen disait seulement que la transcription s'était arrêtée. Lumen la refait désormais sans ce calage fin : la leçon est complète, la lanterne un peu moins précise. Si Whisper s'arrête encore, le message dit pourquoi et quoi essayer.",
+            "en": "On some videos, Whisper stopped dead just before the end, while timing the words, and Lumen only said the transcript had stopped. Lumen now redoes it without that fine timing: the lesson is complete, the lantern slightly less precise. If Whisper still stops, the message says why and what to try."
+          },
+          "action": "import:link"
+        }
+      ]
+    },
+    {
       "version": "1.3.2",
       "date": "2026-10-26",
       "title": { "fr": "Wattpad sans chapitre manquant", "en": "Wattpad with no missing chapters" },

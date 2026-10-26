@@ -3,11 +3,14 @@
 //! Lancé par Lumen comme processus séparé (whisper.cpp et llama.cpp embarquent
 //! chacun leur propre copie de ggml, qu'on ne peut pas lier dans le même binaire).
 //!
-//! Usage : lumen-whisper <modèle.bin> <fichier audio/vidéo> <code langue> [--pcm <sortie.f32>] [--cpu]
+//! Usage : lumen-whisper <modèle.bin> <fichier audio/vidéo> <code langue> [--pcm <sortie.f32>] [--cpu] [--no-dtw]
 //! `--pcm` : enregistre aussi le son décodé (mono, 16 kHz, f32 petit-boutiste),
 //! que Lumen confie ensuite à Qwen3-ASR sans avoir à décoder le fichier.
 //! `--cpu` : le processeur seul (choisi dans Lumen, sous Windows) ; sinon la carte
 //! graphique (Metal sur Mac, Vulkan sous Windows) si elle est là et a la place.
+//! `--no-dtw` : sans l'alignement DTW (horodatages ordinaires de Whisper). whisper.cpp
+//! s'arrête net (WHISPER_ASSERT du filtre médian) quand une fenêtre n'avance que de
+//! quelques centièmes de seconde : Lumen relance alors la transcription ainsi.
 //! Sortie (stdout, une ligne JSON par événement) :
 //!   {"type":"stage","stage":"decode"}
 //!   {"type":"progress","value":42}
@@ -165,7 +168,7 @@ fn dtw_preset(model: &str) -> Option<DtwModelPreset> {
 }
 
 /// Le modèle et son état de travail, sur la carte graphique ou sur le processeur.
-fn load(model: &str, gpu: bool) -> Result<(WhisperContext, whisper_rs::WhisperState)> {
+fn load(model: &str, gpu: bool, dtw: bool) -> Result<(WhisperContext, whisper_rs::WhisperState)> {
     let mut cparams = WhisperContextParameters::default();
     cparams.use_gpu(gpu);
     #[cfg(windows)]
@@ -173,7 +176,7 @@ fn load(model: &str, gpu: bool) -> Result<(WhisperContext, whisper_rs::WhisperSt
         cparams.gpu_device(gpu_device());
     }
     if std::env::var("LUMEN_W_FA").is_ok() { cparams.flash_attn(true); } else // ESSAI
-    if let Some(model_preset) = dtw_preset(model) {
+    if let Some(model_preset) = dtw_preset(model).filter(|_| dtw) {
         // l'alignement DTW exige l'attention classique
         cparams.flash_attn(false);
         cparams.dtw_parameters(DtwParameters { mode: DtwMode::ModelPreset { model_preset }, ..Default::default() });
@@ -191,6 +194,7 @@ fn run() -> Result<()> {
     let (model, media, lang) = (&args[1], Path::new(&args[2]), args[3].clone());
     let pcm_out = args.iter().position(|a| a == "--pcm").and_then(|i| args.get(i + 1));
     let gpu = !args.iter().any(|a| a == "--cpu");
+    let dtw = !args.iter().any(|a| a == "--no-dtw");
 
     emit(serde_json::json!({"type":"stage","stage":"decode"}));
     let (raw, rate) = decode(media)?;
@@ -206,10 +210,10 @@ fn run() -> Result<()> {
     }
 
     emit(serde_json::json!({"type":"stage","stage":"model","duration":duration}));
-    let use_dtw = dtw_preset(model).is_some();
+    let use_dtw = dtw && dtw_preset(model).is_some() && std::env::var("LUMEN_W_FA").is_err();
     // Windows : une carte graphique sans la place pour Whisper laisse faire le processeur
-    let (ctx, mut state) = match load(model, gpu) {
-        Err(_) if gpu && cfg!(windows) => load(model, false)?,
+    let (ctx, mut state) = match load(model, gpu, dtw) {
+        Err(_) if gpu && cfg!(windows) => load(model, false, dtw)?,
         r => r?,
     };
     let eot = ctx.token_eot();

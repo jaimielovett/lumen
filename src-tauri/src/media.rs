@@ -73,9 +73,40 @@ pub async fn transcribe(
     return transcribe_sidecar(model, media, lang, pcm_out, on_event).await;
 }
 
-/// Whisper par le programme à part `lumen-whisper` (Mac et Windows).
+/// Whisper par le programme à part `lumen-whisper` (Mac et Windows). whisper.cpp
+/// s'arrête parfois net pendant l'alignement DTW (une fenêtre qui n'avance que de
+/// quelques centièmes de seconde) : la transcription est alors refaite sans DTW,
+/// avec les horodatages ordinaires de Whisper (lanterne moins fine, leçon complète).
 #[cfg(not(target_os = "ios"))]
 async fn transcribe_sidecar(model: &Path, media: &Path, lang: &str, pcm_out: Option<&Path>, mut on_event: impl FnMut(ImportEvent)) -> Result<Vec<WWord>> {
+    match run_sidecar(model, media, lang, pcm_out, false, &mut on_event).await? {
+        Sidecar::Done(words) => Ok(words),
+        Sidecar::Crashed(_) => match run_sidecar(model, media, lang, pcm_out, true, &mut on_event).await? {
+            Sidecar::Done(words) => Ok(words),
+            Sidecar::Crashed(why) => Err(anyhow!(crate::tr!(
+                "Whisper s'est arrêté en pleine transcription, deux fois de suite ({why}). Essayez de choisir « Processeur » dans Réglages › IA › Carte graphique, puis importez de nouveau.",
+                "Whisper stopped in the middle of the transcription, twice in a row ({why}). Try choosing “Processor” in Settings › AI › Graphics card, then import again."
+            ))),
+        },
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
+enum Sidecar {
+    Done(Vec<WWord>),
+    /// arrêté sans résultat ni message : la raison tirée de sa sortie d'erreur
+    Crashed(String),
+}
+
+#[cfg(not(target_os = "ios"))]
+async fn run_sidecar(
+    model: &Path,
+    media: &Path,
+    lang: &str,
+    pcm_out: Option<&Path>,
+    no_dtw: bool,
+    on_event: &mut impl FnMut(ImportEvent),
+) -> Result<Sidecar> {
     let bin = sidecar_path()?;
     crate::ai::cpu_check()?;
     let mut cmd = crate::proc::tokio_command(bin);
@@ -87,12 +118,29 @@ async fn transcribe_sidecar(model: &Path, media: &Path, lang: &str, pcm_out: Opt
     if !crate::ai::gpu_wanted() {
         cmd.arg("--cpu");
     }
+    if no_dtw {
+        cmd.arg("--no-dtw");
+    }
     let mut child = cmd
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()?;
     let stdout = child.stdout.take().ok_or_else(|| anyhow!(crate::i18n::t("sortie indisponible", "output unavailable")))?;
+    let stderr = child.stderr.take().ok_or_else(|| anyhow!(crate::i18n::t("sortie indisponible", "output unavailable")))?;
+    // la sortie d'erreur (journal de whisper.cpp) est lue à part : sans cela, un journal
+    // abondant bloquerait le programme ; on n'en garde que la fin, pour dire ce qui l'a arrêté
+    let err_task = tokio::spawn(async move {
+        let mut lines = BufReader::new(stderr).lines();
+        let mut last: Vec<String> = Vec::new();
+        while let Ok(Some(l)) = lines.next_line().await {
+            last.push(l);
+            if last.len() > 40 {
+                last.remove(0);
+            }
+        }
+        last
+    });
     let mut lines = BufReader::new(stdout).lines();
     let mut result: Option<Vec<WWord>> = None;
     let mut error: Option<String> = None;
@@ -111,11 +159,37 @@ async fn transcribe_sidecar(model: &Path, media: &Path, lang: &str, pcm_out: Opt
             _ => {}
         }
     }
-    let _ = child.wait().await;
+    let status = child.wait().await;
+    let log = err_task.await.unwrap_or_default();
     if let Some(e) = error {
         return Err(anyhow!(e));
     }
-    result.ok_or_else(|| anyhow!(crate::i18n::t("la transcription s'est arrêtée sans résultat", "the transcription stopped without a result")))
+    if let Some(words) = result {
+        return Ok(Sidecar::Done(words));
+    }
+    Ok(Sidecar::Crashed(crash_reason(status.ok().and_then(|s| s.code()), &log)))
+}
+
+/// Ce qui a arrêté `lumen-whisper` : la ligne d'assertion de whisper.cpp ou de ggml
+/// si elle est là, sinon la dernière ligne de son journal, et le code de sortie.
+#[cfg(not(target_os = "ios"))]
+fn crash_reason(code: Option<i32>, log: &[String]) -> String {
+    let line = log
+        .iter()
+        .rev()
+        .find(|l| l.contains("ASSERT") || l.contains("error") || l.contains("failed"))
+        .or(log.last())
+        .map(|l| {
+            // le chemin des sources de la machine qui a compilé n'apprend rien à personne
+            let l = l.trim();
+            match (l.find(": "), l.rfind(": ")) {
+                (Some(a), Some(b)) if l.contains("ASSERT") && b > a => format!("{}{}", &l[..a + 2], &l[b + 2..]),
+                _ => l.to_string(),
+            }
+        })
+        .unwrap_or_default();
+    let code = code.map(|c| format!("code {c:#x}")).unwrap_or_default();
+    [line, code].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(", ")
 }
 
 /// Whisper dans l'app (iPhone et iPad) : mêmes étapes et même résultat que `lumen-whisper`.
@@ -1132,6 +1206,18 @@ pub fn new_stem() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(not(target_os = "ios"))]
+    #[test]
+    fn whisper_crash_reason() {
+        let log = vec![
+            "whisper_init_state: compute buffer (decode) =  126.29 MB".to_string(),
+            r"WHISPER_ASSERT: D:\a\lumen\lumen\src-tauri\target\release\build\whisper-rs-sys\out\whisper.cpp\src\whisper.cpp:8772: filter_width < a->ne[2]".to_string(),
+        ];
+        assert_eq!(crash_reason(Some(-1073740791), &log), "WHISPER_ASSERT: filter_width < a->ne[2], code 0xc0000409");
+        assert_eq!(crash_reason(None, &[]), "");
+    }
+
     fn ww(w: &str, t0: f64, t1: f64) -> WWord {
         WWord { w: w.into(), t0, t1 }
     }
