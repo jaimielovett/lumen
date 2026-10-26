@@ -1,6 +1,8 @@
 //! Wattpad : une histoire entière d'après son lien (page de l'histoire ou d'un chapitre).
 //! L'API publique du site donne la liste des chapitres, puis le texte de chacun, page par
 //! page, en HTML. Les chapitres payants ne sont pas lisibles : ils sont laissés de côté.
+//! Wattpad limite le nombre de demandes par ordinateur (réponse 400 « RateLimitExceeded ») :
+//! Lumen attend puis réessaie, et ne laisse jamais un chapitre de côté pour cette raison.
 
 use crate::i18n::t;
 use crate::link::{decode_entities, BookPart, LinkInfo};
@@ -10,8 +12,10 @@ use futures_util::{stream, StreamExt};
 use serde_json::Value;
 
 const API: &str = "https://www.wattpad.com";
-/// chapitres lus en même temps : assez pour aller vite, sans peser sur le site
-const AT_ONCE: usize = 4;
+/// chapitres lus en même temps : peu, pour rester sous la limite du site
+const AT_ONCE: usize = 2;
+/// attentes avant chaque nouvel essai quand Wattpad demande de ralentir (secondes)
+const BACKOFF: [u64; 5] = [3, 8, 20, 45, 90];
 /// pages d'un chapitre au plus (un long chapitre en compte une dizaine)
 const MAX_PAGES: usize = 60;
 
@@ -38,12 +42,53 @@ fn target(url: &reqwest::Url) -> Option<Target> {
     id(first).map(Target::Part)
 }
 
-async fn json(c: &reqwest::Client, url: &str) -> Result<Value> {
-    let resp = c.get(url).send().await?;
-    if resp.status().as_u16() == 404 {
-        return Err(anyhow!(t("Cette histoire Wattpad est introuvable (supprimée ou privée).", "This Wattpad story can't be found (deleted or private).")));
+/// Wattpad a demandé de ralentir, et l'attente n'a pas suffi.
+#[derive(Debug)]
+struct Throttled;
+
+impl std::fmt::Display for Throttled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(t(
+            "Wattpad limite le nombre de demandes et en refuse pour le moment. Réessayez dans une dizaine de minutes.",
+            "Wattpad limits how many requests it accepts and is refusing them for now. Try again in about ten minutes.",
+        ))
     }
-    Ok(resp.error_for_status()?.json().await?)
+}
+
+impl std::error::Error for Throttled {}
+
+fn throttled(status: u16, body: &str) -> bool {
+    status == 429 || (status == 400 && body.contains("RateLimitExceeded"))
+}
+
+/// Le texte d'une adresse de Wattpad, en attendant quand le site demande de ralentir.
+async fn get(c: &reqwest::Client, url: &str) -> Result<String> {
+    for wait in BACKOFF.iter().map(Some).chain([None]) {
+        let resp = c.get(url).send().await?;
+        let status = resp.status().as_u16();
+        let body = resp.text().await?;
+        if throttled(status, &body) {
+            match wait {
+                Some(w) => {
+                    tokio::time::sleep(std::time::Duration::from_secs(*w)).await;
+                    continue;
+                }
+                None => return Err(Throttled.into()),
+            }
+        }
+        if status == 404 {
+            return Err(anyhow!(t("Cette histoire Wattpad est introuvable (supprimée ou privée).", "This Wattpad story can't be found (deleted or private).")));
+        }
+        if !(200..300).contains(&status) {
+            return Err(anyhow!(crate::tr!("Wattpad a répondu par une erreur ({}).", "Wattpad answered with an error ({}).", status)));
+        }
+        return Ok(body);
+    }
+    Err(Throttled.into())
+}
+
+async fn json(c: &reqwest::Client, url: &str) -> Result<Value> {
+    Ok(serde_json::from_str(&get(c, url).await?)?)
 }
 
 /// Le texte d'un chapitre : un paragraphe par `<p>`, sans images ni mise en forme.
@@ -85,7 +130,7 @@ fn plain(html: &str) -> Vec<String> {
 async fn part_text(c: &reqwest::Client, id: &str) -> Result<String> {
     let mut paras = Vec::new();
     for page in 1..=MAX_PAGES {
-        let html = c.get(format!("{API}/apiv2/storytext?id={id}&page={page}")).send().await?.error_for_status()?.text().await?;
+        let html = get(c, &format!("{API}/apiv2/storytext?id={id}&page={page}")).await?;
         if html.trim().is_empty() {
             break;
         }
@@ -137,7 +182,12 @@ pub async fn story(c: &reqwest::Client, url: &reqwest::Url, on_event: &mut (dyn 
     let ids: Vec<(usize, String, reqwest::Client)> = parts.iter().enumerate().map(|(i, (pid, _))| (i, pid.clone(), c.clone())).collect();
     let mut jobs = stream::iter(ids.into_iter().map(|(i, pid, c)| async move { (i, part_text(&c, &pid).await) })).buffer_unordered(AT_ONCE);
     while let Some((i, r)) = jobs.next().await {
-        // un chapitre illisible (payant, retiré) n'empêche pas les autres
+        // un chapitre illisible (payant, retiré) n'empêche pas les autres ; un refus de
+        // Wattpad qui dure arrête tout : mieux vaut réessayer qu'un livre à trous
+        let r = match r {
+            Err(e) if e.is::<Throttled>() => return Err(e),
+            r => r,
+        };
         texts[i] = r.ok().filter(|s| !s.trim().is_empty());
         done += 1;
         on_event(ImportEvent::Progress { value: done as f64 / total as f64 });
@@ -180,6 +230,8 @@ mod tests {
         assert!(target(&u("https://www.wattpad.com/user/someone")).is_none());
         let html = r#"<p data-p-id="a" style="x"><b>Primera</b> parte</p><p data-p-id="b"><br></p><p>Uno&nbsp;&amp; dos<br>tres <img src="x.jpg"></p>"#;
         assert_eq!(plain(html), vec!["Primera parte".to_string(), "Uno & dos\ntres".to_string()]);
+        assert!(throttled(400, r#"{"error_code":1002,"error_type":"RateLimitExceeded","message":"Too many requests"}"#));
+        assert!(!throttled(400, "{}"));
     }
 
     /// Lecture réelle d'une histoire : `LUMEN_WATTPAD=<lien> cargo test --lib wattpad_live -- --ignored --nocapture`

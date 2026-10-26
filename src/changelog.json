@@ -2,6 +2,21 @@
   "_lisezmoi": "Nouveautés montrées après chaque mise à jour (components/News.tsx) et notes de publication. Ajouter ce qui change sous la version \"next\" au fil du travail ; « Publier une version » lui donne son numéro et sa date. Icônes : noms de components/Icon.tsx. Actions : \"tour\" (visite guidée), \"guide\", \"settings:<page>\" (profile, general, langs, reading, voice, discover, podcasts, ai, videos, backup, storage, lingq, about), \"import:<onglet>\" (text, link, file, media, podcast), \"view:<vue>\" (library, discover, playlists, chat, vocab, progress).",
   "releases": [
     {
+      "version": "next",
+      "title": { "fr": "Wattpad sans chapitre manquant", "en": "Wattpad with no missing chapters" },
+      "items": [
+        {
+          "icon": "book",
+          "title": { "fr": "Wattpad, même quand il demande de ralentir", "en": "Wattpad, even when it asks to slow down" },
+          "body": {
+            "fr": "Wattpad limite le nombre de demandes : après quelques livres, il en refusait et Lumen montrait une erreur incompréhensible, ou laissait de côté des chapitres sans le dire. Lumen attend désormais et réessaie, demande moins de chapitres à la fois, et si Wattpad refuse encore, il le dit clairement plutôt que d'importer un livre incomplet.",
+            "en": "Wattpad limits how many requests it accepts: after a few books it refused some, and Lumen showed a confusing error, or silently left chapters out. Lumen now waits and tries again, asks for fewer chapters at once, and if Wattpad still refuses, says so clearly instead of importing an incomplete book."
+          },
+          "action": "import:link"
+        }
+      ]
+    },
+    {
       "version": "1.3.1",
       "date": "2026-10-26",
       "title": { "fr": "Les vidéos en ligne toujours à jour", "en": "Online videos that keep working" },
