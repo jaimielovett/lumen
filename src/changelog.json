@@ -2,6 +2,21 @@
   "_lisezmoi": "Nouveautés montrées après chaque mise à jour (components/News.tsx) et notes de publication. Ajouter ce qui change sous la version \"next\" au fil du travail ; « Publier une version » lui donne son numéro et sa date. Icônes : noms de components/Icon.tsx. Actions : \"tour\" (visite guidée), \"guide\", \"settings:<page>\" (profile, general, langs, reading, voice, discover, podcasts, ai, videos, backup, storage, lingq, about), \"import:<onglet>\" (text, link, file, media, podcast), \"view:<vue>\" (library, discover, playlists, chat, vocab, progress).",
   "releases": [
     {
+      "version": "next",
+      "title": { "fr": "Les vidéos en ligne toujours à jour", "en": "Online videos that keep working" },
+      "items": [
+        {
+          "icon": "video",
+          "title": { "fr": "YouTube ne refuse plus vos vidéos", "en": "YouTube no longer refuses your videos" },
+          "body": {
+            "fr": "Une ancienne copie de yt-dlp trouvée sur l'ordinateur faisait échouer certains imports (« HTTP Error 403 »). Lumen utilise désormais sa propre copie, la met à jour chaque jour, et réessaie aussitôt après une mise à jour quand YouTube refuse une vidéo. Sous Windows, il passe aussi derrière un antivirus qui inspecte les connexions.",
+            "en": "An old copy of yt-dlp found on the computer made some imports fail (“HTTP Error 403”). Lumen now uses its own copy, updates it every day, and tries again right after an update when YouTube refuses a video. On Windows, it also works behind an antivirus that inspects connections."
+          },
+          "action": "import:link"
+        }
+      ]
+    },
+    {
       "version": "1.3.0",
       "date": "2026-10-26",
       "title": { "fr": "Un livre en une leçon, Wattpad, votre progression partout", "en": "Books as one lesson, Wattpad, your progress everywhere" },

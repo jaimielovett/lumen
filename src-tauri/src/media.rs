@@ -836,7 +836,8 @@ pub fn align_timings(text_in: &str, lang: &str, words: &[WWord]) -> (String, f64
 }
 
 /// Lance yt-dlp et renvoie les lignes de sortie utiles. La progression
-/// (« LUMEN 42.0% ») est transmise au fur et à mesure.
+/// (« LUMEN 42.0% ») est transmise au fur et à mesure. Un refus de YouTube qui
+/// trahit une version dépassée (403…) : yt-dlp est mis à jour, puis un second essai.
 async fn run_ytdlp(
     data_dir: &Path,
     ytdlp: &Path,
@@ -849,8 +850,29 @@ async fn run_ytdlp(
         let _ = (data_dir, ytdlp, cookies_browser);
         return crate::ytnative::run(args, on_progress).await;
     }
+    match run_ytdlp_once(data_dir, ytdlp, args, cookies_browser, on_progress).await {
+        Err(e) if crate::tools::looks_outdated(&e.to_string()) && crate::tools::update_ytdlp(data_dir).await => {
+            let fresh = crate::tools::find_ytdlp(data_dir).unwrap_or_else(|| ytdlp.to_path_buf());
+            run_ytdlp_once(data_dir, &fresh, args, cookies_browser, on_progress).await
+        }
+        other => other,
+    }
+}
+
+async fn run_ytdlp_once(
+    data_dir: &Path,
+    ytdlp: &Path,
+    args: &[String],
+    cookies_browser: Option<&str>,
+    on_progress: &mut (dyn FnMut(f64) + Send),
+) -> Result<Vec<String>> {
     let mut cmd = crate::proc::tokio_command(ytdlp);
     cmd.args(["--no-playlist", "--newline", "--progress", "--no-colors"]);
+    // Windows : les certificats du système, pas ceux que yt-dlp emporte (un antivirus
+    // qui inspecte les connexions, comme Avast, n'est reconnu que par Windows)
+    if cfg!(windows) {
+        cmd.args(["--compat-options", "no-certifi"]);
+    }
     cmd.args(["--progress-template", "download:LUMEN %(progress._percent_str)s"]);
     if let Some(js) = crate::tools::js_runtime_arg(data_dir) {
         cmd.args(["--js-runtimes", &js]);
