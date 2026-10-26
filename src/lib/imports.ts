@@ -1,5 +1,6 @@
 // Leçons en préparation. Ce que l'apprenant a regardé, écouté ou lu dans
-// Découvrir (ou trouvé par la recherche) devient une leçon en arrière-plan,
+// Découvrir (ou trouvé par la recherche), et les sons et vidéos de la feuille
+// d'import (lien ou fichier), deviennent des leçons en arrière-plan,
 // l'une après l'autre : la transcription occupe la puce. On continue
 // d'explorer pendant ce temps ; une notification ouvre la leçon prête.
 import { create } from "zustand";
@@ -21,6 +22,8 @@ export interface JobSpec {
   image: string;
   /** vidéo ou son à transcrire ; `text` : texte de la page, gardé si le son le suit */
   media?: LinkMedia;
+  /** fichier son ou vidéo de l'ordinateur, à transcrire */
+  file?: string;
   text?: string | null;
   /** page dont lire le texte d'abord (épisode publié avec son texte : DW, RFI…) */
   textFrom?: string;
@@ -86,7 +89,7 @@ function transcriber(): boolean {
 
 /** Le son ou la vidéo se transcrit (une chanson garde ses paroles, un article son texte). */
 function needsTranscriber(spec: JobSpec): boolean {
-  return !!spec.media;
+  return !!spec.media || !!spec.file;
 }
 
 interface ImportStore {
@@ -181,6 +184,7 @@ async function run(job: Job): Promise<number[]> {
   }
   if (spec.podcast) return [await api().podcastCreate(spec.lang, spec.podcast, onEvent)];
   if (spec.song) return [await api().importSong(spec.lang, spec.song, onEvent)];
+  if (spec.file) return [await api().importMedia(spec.lang, spec.file, null, onEvent)];
   if (spec.media) {
     let text = spec.text ?? null;
     if (text === null && spec.textFrom) {

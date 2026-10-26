@@ -13,6 +13,15 @@
             "en": "An old copy of yt-dlp found on the computer made some imports fail (“HTTP Error 403”). Lumen now uses its own copy, updates it every day, and tries again right after an update when YouTube refuses a video. On Windows, it also works behind an antivirus that inspects connections."
           },
           "action": "import:link"
+        },
+        {
+          "icon": "import",
+          "title": { "fr": "Importer sans attendre", "en": "Import without waiting" },
+          "body": {
+            "fr": "Une vidéo, un son ou un épisode importé par un lien ou depuis vos fichiers se prépare désormais en arrière-plan, comme dans Découvrir : la fenêtre d'import se ferme aussitôt, vous suivez l'avancement dans la barre latérale, et une notification ouvre la leçon prête.",
+            "en": "A video, a sound or an episode imported from a link or from your files now gets ready in the background, like in Discover: the import window closes right away, you follow the progress in the sidebar, and a notification opens the lesson when it's ready."
+          },
+          "action": "import:link"
         }
       ]
     },

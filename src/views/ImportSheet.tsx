@@ -6,7 +6,7 @@ import { api, errorText, isTauri } from "../lib/api";
 import { prepareCover, youtubeId } from "../lib/covers";
 import { pickFiles } from "../lib/dialogs";
 import { cleanTitle, useDiscover } from "../lib/discover";
-import { stageText } from "../lib/imports";
+import { stageText, useImports } from "../lib/imports";
 import {
   MEDIA_EXT,
   baseName,
@@ -21,7 +21,7 @@ import {
   wordCount,
   type Chapter,
 } from "../lib/importers";
-import { count, formatNumber, locale, pick, t } from "../lib/i18n";
+import { count, formatNumber, locale, t } from "../lib/i18n";
 import { inLang } from "../lib/langs";
 import { formatBytes, formatDuration, useApp, type ImportTab } from "../lib/store";
 import type { BookChapter, CreatedBook, DiscoverItem, ImportEvent, LinkInfo, LinkMedia, NewLesson, Playlist } from "../lib/types";
@@ -183,6 +183,7 @@ export function ImportSheet() {
   const downloads = useApp((s) => s.downloads);
   const download = useApp((s) => s.download);
   const toast = useApp((s) => s.toast);
+  const enqueue = useImports((s) => s.enqueue);
   const bump = useApp((s) => s.bumpLibrary);
   const openLesson = useApp((s) => s.openLesson);
   const openPlaylist = useApp((s) => s.openPlaylist);
@@ -424,36 +425,32 @@ export function ImportSheet() {
     }
     const items: LinkMedia[] = info.list ? found.picked.map((i) => info.media[i]) : info.media.slice(0, 1);
     const text = choice === "both" && article ? article.text : null;
-    void run(t("Préparation", "Preparing"), async () => {
-      const ids: number[] = [];
-      let failed = 0;
-      let firstError: unknown = null;
-      for (let i = 0; i < items.length; i++) {
-        const prefix = items.length > 1 ? `${i + 1}/${items.length} · ` : "";
-        try {
-          ids.push(await api().importLink(lang, items[i], text, onImportEvent(prefix)));
-        } catch (e) {
-          // un élément d'une liste qui échoue n'arrête pas les suivants
-          if (items.length === 1) throw e;
-          failed++;
-          firstError ??= e;
-        }
-      }
-      if (!ids.length) throw firstError;
-      await finish(
-        ids,
-        ids.length > 1
-          ? t(`${ids.length} leçons créées`, `${ids.length} lessons created`)
-          : items[0].video
-            ? t("Vidéo transcrite", "Video transcribed")
-            : t("Transcription prête", "Transcript ready"),
-      );
-      if (failed)
-        toast(
-          `${pick(failed, `${failed} import n'a pas abouti`, `${failed} imports n'ont pas abouti`, `${failed} import failed`, `${failed} imports failed`)}${t(" : ", ": ")}${errorText(firstError)}`,
-          "error",
-        );
-    });
+    // la file des leçons en préparation s'en charge : la feuille se ferme, on continue
+    // d'utiliser Lumen, une notification ouvre chaque leçon prête
+    items.forEach((m, i) =>
+      enqueue({
+        key: m.url,
+        lang,
+        title: m.title || info.title,
+        image: m.image || info.image,
+        media: m,
+        text: items.length === 1 ? text : null,
+        discoverId: i === 0 ? item?.id : undefined,
+        playlistId: playlistId ?? undefined,
+      }),
+    );
+    queued(items.length);
+  };
+
+  /** Feuille fermée après un envoi dans la file : la suite se voit dans la barre latérale. */
+  const queued = (n: number) => {
+    close();
+    toast(
+      n > 1
+        ? t(`${n} leçons en préparation : suivez-les dans la barre latérale.`, `${n} lessons on the way: follow them in the sidebar.`)
+        : t("Leçon en préparation : suivez-la dans la barre latérale.", "Lesson on the way: follow it in the sidebar."),
+      "light",
+    );
   };
 
   // ---------- fichiers ----------
@@ -545,15 +542,10 @@ export function ImportSheet() {
     } else setProgress(e.value);
   };
 
-  const transcribeAll = () =>
-    run(t("Préparation", "Preparing"), async () => {
-      const ids: number[] = [];
-      for (let i = 0; i < mediaFiles.length; i++) {
-        const prefix = mediaFiles.length > 1 ? `${i + 1}/${mediaFiles.length} · ` : "";
-        ids.push(await api().importMedia(lang, mediaFiles[i], null, onImportEvent(prefix)));
-      }
-      await finish(ids, ids.length > 1 ? t(`${ids.length} transcriptions prêtes`, `${ids.length} transcripts ready`) : t("Transcription prête", "Transcript ready"));
-    });
+  const transcribeAll = () => {
+    for (const path of mediaFiles) enqueue({ key: `file:${path}`, lang, title: baseName(path), image: "", file: path, playlistId: playlistId ?? undefined });
+    queued(mediaFiles.length);
+  };
 
   const AsrMissing = () => {
     const d = asrModel ? downloads[asrModel.id] : undefined;
@@ -564,6 +556,7 @@ export function ImportSheet() {
           <strong>{t("Un modèle de transcription est nécessaire", "A transcription model is needed")}</strong>
           <div className="import-hint">
             {asrModel ? t(`${asrModel.name}, ${formatBytes(asrModel.size)}, téléchargé une seule fois.`, `${asrModel.name}, ${formatBytes(asrModel.size)}, downloaded only once.`) : ""}
+            {t(" Vous pouvez déjà importer : la leçon attendra le modèle.", " You can import now: the lesson will wait for the model.")}
           </div>
           {d && (
             <div className="bar live" style={{ marginTop: 8 }}>
@@ -602,7 +595,7 @@ export function ImportSheet() {
           <button className="btn ghost" onClick={() => setFound(null)}>
             {t("Retour", "Back")}
           </button>
-          <button className="btn primary" disabled={wantsMedia && (!asrReady || n === 0)} onClick={importFound}>
+          <button className="btn primary" disabled={wantsMedia && n === 0} onClick={importFound}>
             {!wantsMedia
               ? t("Voir le texte", "See the text")
               : found.info.list
@@ -661,7 +654,7 @@ export function ImportSheet() {
       );
     if (tab === "media")
       footer = (
-        <button className="btn primary" disabled={!mediaFiles.length || !asrReady} onClick={transcribeAll}>
+        <button className="btn primary" disabled={!mediaFiles.length} onClick={transcribeAll}>
           {mediaFiles.length > 1 ? t(`Transcrire ${mediaFiles.length} fichiers`, `Transcribe ${mediaFiles.length} files`) : t("Transcrire", "Transcribe")}
         </button>
       );
