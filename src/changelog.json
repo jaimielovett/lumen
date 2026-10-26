@@ -2,8 +2,9 @@
   "_lisezmoi": "Nouveautés montrées après chaque mise à jour (components/News.tsx) et notes de publication. Ajouter ce qui change sous la version \"next\" au fil du travail ; « Publier une version » lui donne son numéro et sa date. Icônes : noms de components/Icon.tsx. Actions : \"tour\" (visite guidée), \"guide\", \"settings:<page>\" (profile, general, langs, reading, voice, discover, podcasts, ai, videos, backup, storage, lingq, about), \"import:<onglet>\" (text, link, file, media, podcast), \"view:<vue>\" (library, discover, playlists, chat, vocab, progress).",
   "releases": [
     {
-      "version": "next",
-      "title": { "fr": "Les nouveautés de Lumen 1.3.0", "en": "What's new from Lumen 1.3.0" },
+      "version": "1.3.0",
+      "date": "2026-10-26",
+      "title": { "fr": "Un livre en une leçon, Wattpad, votre progression partout", "en": "Books as one lesson, Wattpad, your progress everywhere" },
       "items": [
         {
           "icon": "book",
