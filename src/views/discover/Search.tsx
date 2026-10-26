@@ -3,17 +3,37 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CoverArt } from "../../components/Cover";
 import { Icon, type IconName } from "../../components/Icon";
 import { prefetchStream } from "../../components/Preview";
-import { Orb, useGlow } from "../../components/ui";
+import { Menu, Orb, useGlow } from "../../components/ui";
 import { grainTexture, youtubeId } from "../../lib/covers";
 import { ago, cleanTitle, levelRange } from "../../lib/discover";
 import { count, formatNumber, t } from "../../lib/i18n";
 import { extractArticle } from "../../lib/importers";
 import { stageText, useJob } from "../../lib/imports";
+import { useLessonOf } from "../../lib/known";
 import { LANGS, inLang } from "../../lib/langs";
 import { fromArticle, fromHit, fromLink, usePreview } from "../../lib/preview";
-import { PLATFORMS, URL_LIKE, forgetSearches, platformName, recentSearches, searchIdeas, useSearch, type Length, type SearchTab } from "../../lib/search";
+import {
+  NO_FILTERS,
+  PLATFORMS,
+  URL_LIKE,
+  activeFilters,
+  forgetSearches,
+  platformName,
+  recentSearches,
+  searchIdeas,
+  tabSupports,
+  useFilters,
+  useSearch,
+  windowText,
+  type Ability,
+  type Length,
+  type SearchTab,
+  type SortBy,
+  type When,
+} from "../../lib/search";
 import { formatDuration, useApp } from "../../lib/store";
 import type { DiscoverItem, LangCode, LinkInfo, SearchHit, SearchPlatform } from "../../lib/types";
+import type { SearchFilters } from "../../lib/search";
 
 /** Graine reproductible d'une chaîne (FNV-1a) : l'œuvre générée ne change pas d'un affichage à l'autre. */
 export function seedOf(s: string): number {
@@ -131,19 +151,22 @@ function lyricsBadge(hit: SearchHit): { icon: IconName; text: string; on: boolea
   return { icon: "lyrics", text: hit.lyrics.synced ? t("Paroles minutées", "Timed lyrics") : t("Paroles", "Lyrics"), on: true };
 }
 
-function HitCard({ hit, index }: { hit: SearchHit; index: number }) {
+/** `lesson` : la leçon déjà tirée de ce résultat (même vidéo, même page, même chanson). */
+function HitCard({ hit, index, lesson }: { hit: SearchHit; index: number; lesson: number | null }) {
   const glow = useGlow<HTMLDivElement>();
   const open = usePreview((s) => s.open);
   const openImportLink = useApp((s) => s.openImportLink);
-  const p = useMemo(() => fromHit(hit), [hit]);
+  const openLesson = useApp((s) => s.openLesson);
+  const p = useMemo(() => ({ ...fromHit(hit), lesson }), [hit, lesson]);
   const hover = useRef<number | null>(null);
   const square = hit.kind === "song" || hit.kind === "show" || (hit.platform === "podcast" && hit.kind === "audio");
   const title = cleanTitle(hit.title);
   const show = hit.kind === "show";
-  const onOpen = () => (show ? openImportLink(hit.url) : open(p));
+  // déjà dans la bibliothèque : la leçon s'ouvre, comme depuis les cartes de Découvrir
+  const onOpen = () => (lesson ? openLesson(lesson) : show ? openImportLink(hit.url) : open(p));
   // une vidéo survolée un instant se prépare : l'aperçu s'ouvrira aussitôt
   const warm = () => {
-    if (hit.kind !== "video" || hit.platform === "podcast") return;
+    if (lesson || hit.kind !== "video" || hit.platform === "podcast") return;
     hover.current = window.setTimeout(() => void prefetchStream(hit.url, false).catch(() => {}), 450);
   };
   const cool = () => hover.current !== null && window.clearTimeout(hover.current);
@@ -163,12 +186,28 @@ function HitCard({ hit, index }: { hit: SearchHit; index: number }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: Math.min(index, 8) * 0.035, type: "spring", stiffness: 260, damping: 28 }}
     >
-      <div className={`find-card glow-surface ${hit.in_lang === false ? "elsewhere" : ""}`} ref={glow.ref} onMouseMove={glow.onMouseMove} onMouseEnter={warm} onMouseLeave={cool}>
-        <button className="lesson-hit" onClick={onOpen} aria-label={show ? t(`Voir les épisodes de ${title}`, `See the episodes of ${title}`) : t(`Aperçu de ${title}`, `Preview ${title}`)} />
+      <div
+        className={`find-card glow-surface ${hit.in_lang === false ? "elsewhere" : ""} ${lesson ? "done" : ""}`}
+        ref={glow.ref}
+        onMouseMove={glow.onMouseMove}
+        onMouseEnter={warm}
+        onMouseLeave={cool}
+      >
+        <button
+          className="lesson-hit"
+          onClick={onOpen}
+          aria-label={lesson ? t(`Ouvrir ${title}`, `Open ${title}`) : show ? t(`Voir les épisodes de ${title}`, `See the episodes of ${title}`) : t(`Aperçu de ${title}`, `Preview ${title}`)}
+        />
         <HitThumb hit={hit} square={square} />
-        <span className="hit-badges">
-          <JobBadge jobKey={p.key} />
-        </span>
+        {lesson ? (
+          <span className="find-done">
+            <Icon name="check" size={12} stroke={2.4} /> {t("Dans la bibliothèque", "In your library")}
+          </span>
+        ) : (
+          <span className="hit-badges">
+            <JobBadge jobKey={p.key} />
+          </span>
+        )}
         <div className="find-body">
           <div className="find-top">
             <span className="find-source">{hit.author}</span>
@@ -212,18 +251,26 @@ function Ghosts({ n, square }: { n: number; square?: boolean }) {
 }
 
 /** Les résultats d'une plateforme : une rangée (onglet « Tout ») ou une grille. */
-function PlatformResults({ platform, compact }: { platform: SearchPlatform; compact: boolean }) {
+function PlatformResults({ lang, platform, compact }: { lang: LangCode; platform: SearchPlatform; compact: boolean }) {
   const bucket = useSearch((s) => s.buckets[platform]);
+  const lessonOf = useLessonOf(lang);
+  const filters = useFilters();
+  // une émission (son flux) n'est pas une leçon : seuls ses épisodes le deviennent
+  const lessonFor = (h: SearchHit) => (h.kind === "show" ? null : lessonOf({ url: h.url, page: h.page, ...(h.kind === "song" ? { artist: h.author, title: h.title } : {}) }));
   const setTab = useSearch((s) => s.setTab);
   const more = useSearch((s) => s.more);
   const installing = useSearch((s) => s.installing);
   if (!bucket) return null;
   const square = platform === "music" || platform === "podcast";
   const limit = compact ? (platform === "youtube" ? 8 : 6) : Infinity;
+  // filtres de l'affichage : une autre langue, ce qui est déjà dans la bibliothèque
+  const kept = bucket.hits.filter((h) => !(filters.onlyLang && h.in_lang === false) && !(filters.hideKnown && lessonFor(h) !== null));
+  const masked = bucket.hits.length - kept.length;
   // podcasts : les émissions d'abord, puis les épisodes
-  const shows = platform === "podcast" ? bucket.hits.filter((h) => h.kind === "show") : [];
-  const hits = (platform === "podcast" ? bucket.hits.filter((h) => h.kind !== "show") : bucket.hits).slice(0, limit);
-  if (compact && !bucket.loading && !bucket.hits.length) return null;
+  const shows = platform === "podcast" ? kept.filter((h) => h.kind === "show") : [];
+  const hits = (platform === "podcast" ? kept.filter((h) => h.kind !== "show") : kept).slice(0, limit);
+  if (compact && !bucket.loading && !kept.length) return null;
+  const period = bucket.window ? windowText(bucket.window) : "";
   return (
     <section className={`hit-section hit-${platform}`}>
       <header className="shelf-head">
@@ -235,8 +282,15 @@ function PlatformResults({ platform, compact }: { platform: SearchPlatform; comp
             <p>{platform === "youtube" && installing ? t("Installation des composants vidéo, une seule fois…", "Installing the video components, just once…") : t("Recherche…", "Searching…")}</p>
           )}
           {bucket.error && <p className="hit-error">{bucket.error}</p>}
+          {!bucket.error && (period || masked > 0) && !(bucket.loading && !bucket.hits.length) && (
+            <p className="hit-note">
+              {[period, masked > 0 ? count(masked, "résultat masqué par vos filtres", "résultats masqués par vos filtres", "result hidden by your filters", "results hidden by your filters") : ""]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          )}
         </div>
-        {compact && bucket.hits.length > limit && (
+        {compact && kept.length > limit && (
           <button className="btn ghost sm" onClick={() => setTab(platform)}>
             {t("Tout voir", "See all")} <Icon name="right" size={14} />
           </button>
@@ -247,7 +301,7 @@ function PlatformResults({ platform, compact }: { platform: SearchPlatform; comp
           <p className="hit-sub">{t("Émissions", "Shows")}</p>
           <div className={compact ? "shelf-track hit-row" : "hit-grid square"}>
             {shows.slice(0, compact ? 6 : 12).map((h, i) => (
-              <HitCard key={h.id} hit={h} index={i} />
+              <HitCard key={h.id} hit={h} index={i} lesson={null} />
             ))}
           </div>
           {hits.length > 0 && <p className="hit-sub">{t("Épisodes", "Episodes")}</p>}
@@ -255,7 +309,7 @@ function PlatformResults({ platform, compact }: { platform: SearchPlatform; comp
       )}
       <div className={compact && platform !== "youtube" ? "shelf-track hit-row" : `hit-grid ${square ? "square" : ""}`}>
         {hits.map((h, i) => (
-          <HitCard key={h.id} hit={h} index={i} />
+          <HitCard key={h.id} hit={h} index={i} lesson={lessonFor(h)} />
         ))}
         {bucket.loading && <Ghosts n={bucket.hits.length ? 4 : compact ? 4 : 8} square={square} />}
       </div>
@@ -266,7 +320,15 @@ function PlatformResults({ platform, compact }: { platform: SearchPlatform; comp
           </button>
         </div>
       )}
-      {!compact && !bucket.loading && !bucket.hits.length && !bucket.error && <p className="muted hit-none">{t("Aucun résultat sur cette plateforme.", "No results on this platform.")}</p>}
+      {!compact && !bucket.loading && !kept.length && !bucket.error && (
+        <p className="muted hit-none">
+          {bucket.hits.length
+            ? t("Vos filtres masquent tous les résultats de cette plateforme.", "Your filters hide every result from this platform.")
+            : activeFilters(filters) > 0 || filters.sort !== "relevance"
+              ? t("Aucun résultat avec ces filtres : essayez une autre période ou une autre durée.", "No results with these filters: try another period or length.")
+              : t("Aucun résultat sur cette plateforme.", "No results on this platform.")}
+        </p>
+      )}
     </section>
   );
 }
@@ -342,6 +404,31 @@ function LinkResult({ lang }: { lang: LangCode }) {
   );
 }
 
+/** Les trouvailles de Découvrir selon les filtres : période, durée, bibliothèque, puis l'ordre des dates. */
+export function filterFinds(items: DiscoverItem[], f: SearchFilters): DiscoverItem[] {
+  const now = Date.now() / 1000;
+  const span: Record<Exclude<When, "">, number> = { day: 86400, week: 7 * 86400, month: 31 * 86400, year: 366 * 86400, older: 366 * 86400 };
+  const out = items.filter((it) => {
+    if (f.hideKnown && it.lesson_id) return false;
+    if (f.when) {
+      if (!it.published) return false;
+      const age = now - it.published;
+      if (f.when === "older" ? age < span.older : age > span[f.when]) return false;
+    }
+    if (f.length && it.duration > 0) {
+      if (f.length === "short" && it.duration >= 240) return false;
+      if (f.length === "medium" && (it.duration < 240 || it.duration > 1200)) return false;
+      if (f.length === "long" && it.duration <= 1200) return false;
+    }
+    // un article n'a pas de durée : il ne répond pas à un filtre de durée
+    if (f.length && it.duration <= 0) return false;
+    return true;
+  });
+  if (f.sort === "recent") out.sort((a, b) => b.published - a.published);
+  if (f.sort === "old") out.sort((a, b) => (a.published || Infinity) - (b.published || Infinity));
+  return out;
+}
+
 /** Le champ de recherche de Découvrir, ses catégories (choisies avant ou après la recherche), et ses idées quand il est vide. */
 export function SearchBar({ lang }: { lang: LangCode }) {
   const query = useSearch((s) => s.query);
@@ -350,6 +437,7 @@ export function SearchBar({ lang }: { lang: LangCode }) {
   const setTab = useSearch((s) => s.setTab);
   const [text, setText] = useState(query);
   const [focus, setFocus] = useState(false);
+  const [panel, setPanel] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const recent = useApp((s) => s.settings[`search_recent_${lang}`]) ? recentSearches(lang) : [];
   useEffect(() => setText(query), [query]);
@@ -405,13 +493,14 @@ export function SearchBar({ lang }: { lang: LangCode }) {
           aria-label={t("Chercher en ligne", "Search online")}
           dir="auto"
           spellCheck={false}
+          enterKeyHint="search"
         />
         {text && (
           <button type="button" className="icon-btn" onClick={() => go("")} aria-label={t("Effacer", "Clear")}>
             <Icon name="close" size={15} />
           </button>
         )}
-        <button type="submit" className="btn primary sm" disabled={!text.trim()}>
+        <button type="submit" className="btn primary sm disc-search-go" disabled={!text.trim()}>
           {link ? t("Ouvrir", "Open") : t("Chercher", "Search")}
         </button>
       </form>
@@ -443,24 +532,233 @@ export function SearchBar({ lang }: { lang: LangCode }) {
         )}
       </AnimatePresence>
       {!(query && URL_LIKE.test(query)) && (
-        <div className="disc-search-tabs" role="tablist" aria-label={t("Où chercher", "Where to search")}>
-          {(["all", ...PLATFORMS] as SearchTab[]).map((p) => (
-            <button
-              key={p}
-              role="tab"
-              aria-selected={tab === p}
-              className={`search-tab ${tab === p ? "on" : ""}`}
-              // le champ garde le curseur : on choisit la catégorie, puis on tape
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => pick(p)}
-            >
-              {tab === p && <motion.span layoutId="search-tab-pill" className="search-tab-pill" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
-              <Icon name={tabIcon(p)} size={14} /> {platformName(p)}
-            </button>
-          ))}
-        </div>
+        <>
+          <div className="disc-search-row">
+            <div className="disc-search-tabs" role="tablist" aria-label={t("Où chercher", "Where to search")}>
+              {(["all", ...PLATFORMS] as SearchTab[]).map((p) => (
+                <button
+                  key={p}
+                  role="tab"
+                  aria-selected={tab === p}
+                  className={`search-tab ${tab === p ? "on" : ""}`}
+                  // le champ garde le curseur : on choisit la catégorie, puis on tape
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => pick(p)}
+                >
+                  {tab === p && <motion.span layoutId="search-tab-pill" className="search-tab-pill" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
+                  <Icon name={tabIcon(p)} size={14} /> {platformName(p)}
+                </button>
+              ))}
+            </div>
+            <FilterTools scope={query ? tab : "feed"} open={panel} onToggle={() => setPanel((v) => !v)} />
+          </div>
+          <FilterPanel scope={query ? tab : "feed"} lang={lang} open={panel} />
+        </>
       )}
     </div>
+  );
+}
+
+/** Les tris proposés, avec leur icône et ce qu'ils font. */
+function sortChoices(scope: SearchTab | "feed"): { value: SortBy; icon: IconName; label: string; hint: string }[] {
+  return [
+    {
+      value: "relevance",
+      icon: "sparkle",
+      label: scope === "feed" ? t("Pour vous", "For you") : t("Pertinence", "Relevance"),
+      hint: scope === "feed" ? t("Rangé par rayon, à votre niveau", "Sorted by shelf, at your level") : t("Ce qui répond le mieux", "What matches best"),
+    },
+    { value: "recent", icon: "clock", label: t("Les plus récents", "Most recent"), hint: t("Publiés ces derniers jours", "Published in the last few days") },
+    { value: "popular", icon: "flame", label: t("Les plus populaires", "Most popular"), hint: t("Les plus vus et les plus écoutés", "The most watched and listened to") },
+    { value: "old", icon: "book", label: t("Les plus anciens", "Oldest"), hint: t("Des contenus d'archives", "Archive content") },
+  ];
+}
+
+/** Pourquoi un tri ou un filtre n'est pas proposé ici. */
+function unsupported(scope: SearchTab | "feed", what: Ability): string {
+  if (scope === "feed")
+    return what === "popular"
+      ? t("La popularité se lit dans une recherche en ligne : tapez ce qui vous intéresse.", "Popularity comes with an online search: type what interests you.")
+      : t("Seulement pour une recherche en ligne.", "Only for an online search.");
+  if (scope === "music") return t("Les chansons se classent seulement par popularité.", "Songs can only be sorted by popularity.");
+  if (scope === "wiki") return t("Les articles se classent par date de création ou par popularité, sans autre filtre.", "Articles sort by creation date or popularity, with no other filter.");
+  if (scope === "podcast") return t("L'annuaire des podcasts ne dit pas leur popularité.", "The podcast directory doesn't share popularity.");
+  return t("Seulement pour les vidéos YouTube.", "YouTube videos only.");
+}
+
+/** Tri (menu) et bouton « Filtres », à droite des catégories. */
+function FilterTools({ scope, open, onToggle }: { scope: SearchTab | "feed"; open: boolean; onToggle(): void }) {
+  const f = useFilters();
+  const setFilters = useSearch((s) => s.setFilters);
+  const [menu, setMenu] = useState(false);
+  const choices = sortChoices(scope);
+  const current = choices.find((c) => c.value === f.sort) ?? choices[0];
+  // un tri que l'onglet ne connaît pas s'affiche tel quel, mais il est signalé
+  const off = f.sort !== "relevance" && !tabSupports(scope, f.sort);
+  const offText = f.sort !== "relevance" ? unsupported(scope, f.sort) : undefined;
+  const n = activeFilters(f);
+  return (
+    <div className="filter-tools">
+      <Menu
+        open={menu}
+        onClose={() => setMenu(false)}
+        align="right"
+        anchor={
+          <button
+            className={`filter-btn ${f.sort !== "relevance" ? "on" : ""} ${off ? "off" : ""}`}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setMenu((v) => !v)}
+            aria-haspopup="menu"
+            aria-expanded={menu}
+            title={off ? offText : undefined}
+          >
+            <Icon name={current.icon} size={14} />
+            <span className="filter-btn-label">{current.label}</span>
+            <Icon name="chevron" size={13} />
+          </button>
+        }
+      >
+        <div className="menu-note">{t("Trier les résultats", "Sort the results")}</div>
+        {choices.map((c) => {
+          const ok = c.value === "relevance" || tabSupports(scope, c.value);
+          return (
+            <button
+              key={c.value}
+              className={`menu-item sort-item ${ok ? "" : "disabled"}`}
+              role="menuitemradio"
+              aria-checked={f.sort === c.value}
+              aria-disabled={!ok}
+              title={ok ? undefined : unsupported(scope, c.value as Ability)}
+              onClick={() => {
+                if (!ok) return;
+                setMenu(false);
+                setFilters({ sort: c.value });
+              }}
+            >
+              <Icon name={c.icon} size={16} />
+              <span className="sort-text">
+                <strong>{c.label}</strong>
+                <em>{ok ? c.hint : unsupported(scope, c.value as Ability)}</em>
+              </span>
+              {f.sort === c.value && <Icon name="check" size={16} />}
+            </button>
+          );
+        })}
+      </Menu>
+      <button className={`filter-btn ${open || n ? "on" : ""}`} onMouseDown={(e) => e.preventDefault()} onClick={onToggle} aria-expanded={open}>
+        <Icon name="layers" size={14} />
+        <span className="filter-btn-label">{t("Filtres", "Filters")}</span>
+        {n > 0 && <span className="filter-count num">{n}</span>}
+      </button>
+    </div>
+  );
+}
+
+/** Une rangée de pastilles à choix unique. */
+function ChipRow<T extends string>({ label, value, options, disabled, onChange }: { label: string; value: T; options: [T, string][]; disabled?: string; onChange(v: T): void }) {
+  return (
+    <div className={`filter-row ${disabled ? "disabled" : ""}`} title={disabled}>
+      <span className="ideas-label">{label}</span>
+      <div className="filter-chips" role="radiogroup" aria-label={label}>
+        {options.map(([v, text]) => (
+          <button
+            key={v}
+            role="radio"
+            aria-checked={value === v}
+            disabled={!!disabled}
+            className={`idea ${value === v ? "on" : ""}`}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => onChange(v)}
+          >
+            {text}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Le panneau des filtres : date, durée, sous-titres, ce qu'on cache. */
+function FilterPanel({ scope, lang, open }: { scope: SearchTab | "feed"; lang: LangCode; open: boolean }) {
+  const f = useFilters();
+  const setFilters = useSearch((s) => s.setFilters);
+  const feed = scope === "feed";
+  const toggle = (on: boolean, label: string, icon: IconName, onChange: (v: boolean) => void, disabled?: string) => (
+    <button role="switch" aria-checked={on} disabled={!!disabled} title={disabled} className={`idea toggle ${on ? "on" : ""}`} onMouseDown={(e) => e.preventDefault()} onClick={() => onChange(!on)}>
+      <Icon name={on ? "check" : icon} size={13} stroke={on ? 2.4 : undefined} /> {label}
+    </button>
+  );
+  const changed = activeFilters(f) > 0 || f.sort !== "relevance";
+  return (
+    <AnimatePresence initial={false}>
+      {open && (
+        <motion.div
+          className="filter-panel"
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: "auto", opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ type: "spring", stiffness: 380, damping: 36, opacity: { duration: 0.18 } }}
+        >
+          <div className="filter-panel-inner">
+            <ChipRow<When>
+              label={t("Publié", "Published")}
+              value={f.when}
+              disabled={tabSupports(scope, "when") ? undefined : unsupported(scope, "when")}
+              onChange={(when) => setFilters({ when })}
+              options={[
+                ["", t("N'importe quand", "Any time")],
+                ["day", t("Aujourd'hui", "Today")],
+                ["week", t("Cette semaine", "This week")],
+                ["month", t("Ce mois-ci", "This month")],
+                ["year", t("Cette année", "This year")],
+                ["older", t("Il y a plus d'un an", "Over a year ago")],
+              ]}
+            />
+            <ChipRow<Length>
+              label={t("Durée", "Length")}
+              value={f.length}
+              disabled={tabSupports(scope, "length") ? undefined : unsupported(scope, "length")}
+              onChange={(length) => setFilters({ length })}
+              options={[
+                ["", t("Toutes", "Any")],
+                ["short", t("Moins de 4 min", "Under 4 min")],
+                ["medium", t("4 à 20 min", "4–20 min")],
+                ["long", t("Plus de 20 min", "Over 20 min")],
+              ]}
+            />
+            <div className="filter-row">
+              <span className="ideas-label">{t("Afficher", "Show")}</span>
+              <div className="filter-chips">
+                {!feed &&
+                  toggle(
+                    f.subtitles,
+                    t("Vidéos sous-titrées", "Videos with subtitles"),
+                    "type",
+                    (subtitles) => setFilters({ subtitles }),
+                    tabSupports(scope, "subtitles") ? undefined : unsupported(scope, "subtitles"),
+                  )}
+                {!feed && toggle(f.onlyLang, t(`Seulement ${inLang(lang)}`, `Only ${inLang(lang)}`), "globe", (onlyLang) => setFilters({ onlyLang }))}
+                {toggle(f.hideKnown, t("Masquer ma bibliothèque", "Hide my library"), "eye", (hideKnown) => setFilters({ hideKnown }))}
+              </div>
+            </div>
+            <div className="filter-foot">
+              <span className="muted">
+                {feed
+                  ? t("Sans recherche, les filtres s'appliquent aux trouvailles de Lumen.", "Without a search, the filters apply to Lumen's finds.")
+                  : scope === "all"
+                    ? t("Chaque plateforme applique ce qu'elle sait faire.", "Each platform applies what it can.")
+                    : ""}
+              </span>
+              {changed && (
+                <button className="disc-link" onMouseDown={(e) => e.preventDefault()} onClick={() => setFilters(NO_FILTERS)}>
+                  {t("Tout réinitialiser", "Reset all")}
+                </button>
+              )}
+            </div>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -468,38 +766,22 @@ export function SearchBar({ lang }: { lang: LangCode }) {
 export function SearchResults({ lang, local, onBack, renderLocal }: { lang: LangCode; local: DiscoverItem[]; onBack(): void; renderLocal(items: DiscoverItem[]): React.ReactNode }) {
   const query = useSearch((s) => s.query);
   const tab = useSearch((s) => s.tab);
-  const length = useSearch((s) => s.length);
-  const setLength = useSearch((s) => s.setLength);
   const link = useSearch((s) => s.link);
-  const video = tab === "youtube" || tab === "dailymotion" || tab === "all";
+  const f = useFilters();
+  // les trouvailles de Lumen suivent aussi les filtres qu'elles connaissent
+  const shownLocal = useMemo(() => filterFinds(local, f), [local, f]);
   return (
     <motion.div className="search-results" key={`${query}-${tab}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.26, ease: [0.2, 0.8, 0.2, 1] }}>
       <div className="search-head">
         <button className="btn ghost sm" onClick={onBack}>
           <Icon name="left" size={15} /> {t("Découvertes du jour", "Today's finds")}
         </button>
-        {video && !link && (
-          <div className="length-chips" role="radiogroup" aria-label={t("Durée des vidéos", "Video length")}>
-            {(
-              [
-                ["", t("Toutes durées", "Any length")],
-                ["short", t("Moins de 4 min", "Under 4 min")],
-                ["medium", "4–20 min"],
-                ["long", t("Plus de 20 min", "Over 20 min")],
-              ] as [Length, string][]
-            ).map(([v, label]) => (
-              <button key={v} role="radio" aria-checked={length === v} className={`idea ${length === v ? "on" : ""}`} onClick={() => setLength(v)}>
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
       {link ? (
         <LinkResult lang={lang} />
       ) : (
         <>
-          {tab === "all" && local.length > 0 && (
+          {tab === "all" && shownLocal.length > 0 && (
             <section className="hit-section">
               <header className="shelf-head">
                 <div>
@@ -509,11 +791,11 @@ export function SearchResults({ lang, local, onBack, renderLocal }: { lang: Lang
                   <p>{t("Déjà trouvé par Lumen, rangé par niveau", "Already found by Lumen, sorted by level")}</p>
                 </div>
               </header>
-              {renderLocal(local)}
+              {renderLocal(shownLocal)}
             </section>
           )}
           {(tab === "all" ? PLATFORMS : [tab]).map((p) => (
-            <PlatformResults key={p} platform={p as SearchPlatform} compact={tab === "all"} />
+            <PlatformResults key={p} lang={lang} platform={p as SearchPlatform} compact={tab === "all"} />
           ))}
         </>
       )}

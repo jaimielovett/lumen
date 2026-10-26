@@ -2,14 +2,15 @@
 //! (modèle neuronal, 31 langues), exécuté par l'outil
 //! officiel de sherpa-onnx.
 //!
-//! Le moteur (~30 Mo) et le modèle (~130 Mo) se téléchargent à part, comme les
-//! modèles d'IA. Rien ne tourne en permanence : l'outil est lancé à la demande
-//! puis s'arrête. Chaque prononciation est gardée en cache (`media/voice`), le
-//! même mot revient donc instantanément.
+//! Le moteur (~20 Mo, `sherpa.rs`, partagé avec Parakeet) et le modèle (~130 Mo)
+//! se téléchargent à part, comme les modèles d'IA. Rien ne tourne en permanence :
+//! l'outil est lancé à la demande puis s'arrête. Chaque prononciation est gardée
+//! en cache (`media/voice`), le même mot revient donc instantanément.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+#[cfg(not(target_os = "ios"))]
 use std::time::Duration;
 
 use anyhow::{anyhow, Result};
@@ -17,21 +18,7 @@ use base64::Engine as _;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use crate::models::{self, DownloadEvent, ModelInfo};
-
-const ENGINE_VERSION: &str = "1.13.8";
-/// Archive du moteur pour ce système : macOS (puce Apple) ou Windows (x64,
-/// bibliothèque C++ intégrée : rien à installer à côté).
-const ENGINE_FLAVOR: &str = if cfg!(windows) { "win-x64-shared-MT-Release" } else { "osx-arm64-shared" };
-/// Taille de cette archive, pour la progression.
-pub const ENGINE_SIZE: u64 = if cfg!(windows) { 24_805_859 } else { 20_314_448 };
-/// Ce qu'on garde de l'archive : l'outil de synthèse (en premier), puis les
-/// bibliothèques qu'il charge (sous Windows, à côté de lui).
-const ENGINE_FILES: &[&str] = if cfg!(windows) {
-    &["bin/sherpa-onnx-offline-tts.exe", "bin/onnxruntime.dll", "bin/onnxruntime_providers_shared.dll"]
-} else {
-    &["bin/sherpa-onnx-offline-tts", "lib/libonnxruntime.dylib"]
-};
+use crate::models::{self, ModelInfo};
 
 /// Les langues de Lumen portent le même code chez Supertonic.
 use crate::text::TTS_LANGS;
@@ -116,78 +103,6 @@ fn speaker(voice: &str) -> u32 {
     }
 }
 
-fn engine_name() -> String {
-    format!("sherpa-onnx-v{ENGINE_VERSION}-{ENGINE_FLAVOR}")
-}
-
-fn engine_dir(data_dir: &Path) -> PathBuf {
-    crate::tools::tools_dir(data_dir).join(engine_name())
-}
-
-/// Un fichier du moteur (« bin/… », « lib/… »).
-fn engine_file(data_dir: &Path, rel: &str) -> PathBuf {
-    rel.split('/').fold(engine_dir(data_dir), |p, part| p.join(part))
-}
-
-fn engine_bin(data_dir: &Path) -> PathBuf {
-    engine_file(data_dir, ENGINE_FILES[0])
-}
-
-pub fn engine_ready(data_dir: &Path) -> bool {
-    // la bibliothèque facultative d'onnxruntime peut manquer
-    ENGINE_FILES.iter().take(2).all(|f| engine_file(data_dir, f).exists())
-}
-
-/// Supprime le moteur (avec le modèle de voix).
-pub fn remove_engine(data_dir: &Path) {
-    let _ = std::fs::remove_dir_all(engine_dir(data_dir));
-}
-
-/// Télécharge le moteur s'il manque, et n'en garde que l'outil de synthèse et
-/// sa bibliothèque (la mise en page bin/ et lib/ est celle qu'attend l'outil).
-pub async fn ensure_engine(data_dir: &Path, cancel: Arc<AtomicBool>, mut on_progress: impl FnMut(u64, u64)) -> Result<()> {
-    if engine_ready(data_dir) {
-        return Ok(());
-    }
-    if !cfg!(any(all(target_os = "macos", target_arch = "aarch64"), all(windows, target_arch = "x86_64"))) {
-        return Err(anyhow!(crate::i18n::t(
-            "La voix naturelle n'est pas encore disponible sur cet ordinateur.",
-            "The natural voice isn't available on this computer yet."
-        )));
-    }
-    let tools = crate::tools::tools_dir(data_dir);
-    tokio::fs::create_dir_all(&tools).await?;
-    let name = engine_name();
-    let url = format!("https://github.com/k2-fsa/sherpa-onnx/releases/download/v{ENGINE_VERSION}/{name}.tar.bz2");
-    let part = tools.join(format!("{name}.part"));
-    let mut forward = |e: DownloadEvent| {
-        if let DownloadEvent::Progress { received, total, .. } = e {
-            on_progress(received, total);
-        }
-    };
-    models::fetch_resumable(&url, &part, 0, ENGINE_SIZE, cancel, &mut forward).await?;
-    let wanted: Vec<String> = ENGINE_FILES.iter().map(|f| format!("{name}/{f}")).collect();
-    #[cfg(not(windows))]
-    let ok = tokio::process::Command::new("tar").arg("-xjf").arg(&part).arg("-C").arg(&tools).args(&wanted).output().await?.status.success();
-    // Windows : décompressé ici (le tar de Windows 10 ne lit pas toujours le bzip2)
-    #[cfg(windows)]
-    let ok = {
-        let (archive, dest) = (part.clone(), tools.clone());
-        tokio::task::spawn_blocking(move || models::unpack_tar_bz2(&archive, &dest, Some(&wanted))).await?.is_ok()
-    };
-    let _ = tokio::fs::remove_file(&part).await;
-    // l'outil lit sa ligne de commande (le texte à dire) en UTF-8
-    #[cfg(windows)]
-    if ok {
-        let _ = crate::win::utf8_manifest(&engine_bin(data_dir));
-    }
-    if !ok || !engine_ready(data_dir) {
-        remove_engine(data_dir);
-        return Err(anyhow!(crate::i18n::t("le moteur de voix n'a pas pu être installé, réessayez", "the voice engine couldn't be installed, try again")));
-    }
-    Ok(())
-}
-
 /// Dossier des prononciations en cache (dans `media/`, lisible par l'interface).
 fn cache_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("media").join("voice")
@@ -200,11 +115,23 @@ pub fn cached_path(data_dir: &Path, m: &ModelInfo, lang: &str, text: &str, voice
     cache_dir(data_dir).join(format!("{}.wav", &hex::encode(h.finalize())[..20]))
 }
 
+/// iPhone et iPad : la bibliothèque sherpa-onnx dans l'app (sherpa_ios.rs), même résultat.
+#[cfg(target_os = "ios")]
+async fn run_engine(data_dir: &Path, m: &ModelInfo, lang: &str, text: &str, voice: &str, threads: u32, out: &Path) -> Result<()> {
+    let model = models::path_of(data_dir, m);
+    let (lang, text, sid) = (lang.to_string(), text.to_string(), speaker(voice));
+    let (rate, samples) = tokio::task::spawn_blocking(move || crate::sherpa_ios::tts(&model, &lang, &text, sid, threads.min(4))).await??;
+    let pcm: Vec<i16> = samples.iter().map(|x| (x.clamp(-1.0, 1.0) * 32767.0).round() as i16).collect();
+    tokio::fs::write(out, write_wav(rate, &pcm)).await?;
+    Ok(())
+}
+
 /// Lance le moteur une fois : `text` prononcé dans `out` (WAV PCM 16 bits mono).
+#[cfg(not(target_os = "ios"))]
 async fn run_engine(data_dir: &Path, m: &ModelInfo, lang: &str, text: &str, voice: &str, threads: u32, out: &Path) -> Result<()> {
     let model = models::path_of(data_dir, m);
     let f = |name: &str| model.join(name);
-    let mut cmd = crate::proc::tokio_command(engine_bin(data_dir));
+    let mut cmd = crate::proc::tokio_command(crate::sherpa::bin(data_dir, crate::sherpa::Tool::Tts));
     cmd.arg(format!("--supertonic-duration-predictor={}", f("duration_predictor.int8.onnx").display()))
         .arg(format!("--supertonic-text-encoder={}", f("text_encoder.int8.onnx").display()))
         .arg(format!("--supertonic-vector-estimator={}", f("vector_estimator.int8.onnx").display()))
@@ -583,14 +510,14 @@ pub(crate) fn level_volume(all: &mut [i16]) {
 
 /// Enregistre un son assemblé dans `media/<horodatage>.<tag>.m4a`, compressé en
 /// AAC (environ 0,5 Mo par minute au lieu de 5 Mo en WAV) ; en WAV si la compression
-/// échoue (`afconvert` sur Mac, l'encodeur de Windows sur PC).
+/// échoue (`afconvert` sur Mac, l'encodeur de Windows sur PC, AudioToolbox sur iPhone).
 /// `work` : dossier de travail, où passe le WAV intermédiaire.
 pub(crate) async fn save_m4a(work: &Path, media: &Path, tag: &str, rate: u32, samples: &[i16]) -> Result<PathBuf> {
     let wav_path = work.join(format!("{tag}.wav"));
     tokio::fs::write(&wav_path, write_wav(rate, samples)).await?;
     let stem = crate::media::new_stem();
     let m4a = media.join(format!("{stem}.{tag}.m4a"));
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "ios")))]
     let converted = tokio::process::Command::new("afconvert")
         .args(["-f", "m4af", "-d", "aac", "-b", "64000"])
         .arg(&wav_path)
@@ -603,6 +530,12 @@ pub(crate) async fn save_m4a(work: &Path, media: &Path, tag: &str, rate: u32, sa
     let converted = {
         let (out, pcm) = (m4a.clone(), samples.to_vec());
         tokio::task::spawn_blocking(move || crate::win::aac_m4a(rate, &pcm, &out)).await.map(|r| r.is_ok()).unwrap_or(false)
+    };
+    // iPhone et iPad : l'encodeur AAC d'AudioToolbox, appelé ici (compress.rs)
+    #[cfg(target_os = "ios")]
+    let converted = {
+        let (out, pcm) = (m4a.clone(), samples.to_vec());
+        tokio::task::spawn_blocking(move || crate::compress::write_aac(&out, rate, &pcm, 64_000)).await.map(|r| r.is_ok()).unwrap_or(false)
     };
     if converted && m4a.exists() {
         let _ = tokio::fs::remove_file(&wav_path).await;
@@ -711,7 +644,7 @@ mod live {
         std::os::unix::fs::symlink(&model_src, models::path_of(&data, m)).unwrap();
 
         let t = Instant::now();
-        ensure_engine(&data, Arc::new(AtomicBool::new(false)), |_, _| {}).await.unwrap();
+        crate::sherpa::ensure(&data, crate::sherpa::Tool::Tts, Arc::new(AtomicBool::new(false)), |_, _| {}).await.unwrap();
         println!("moteur installé en {:.1} s", t.elapsed().as_secs_f32());
         assert!(models::installed(&data, m));
 
@@ -746,7 +679,7 @@ mod live {
         std::fs::create_dir_all(data.join("models")).unwrap();
         let m = models::CATALOG.iter().find(|m| m.kind == "tts").unwrap();
         std::os::unix::fs::symlink(&model_src, models::path_of(&data, m)).unwrap();
-        ensure_engine(&data, Arc::new(AtomicBool::new(false)), |_, _| {}).await.unwrap();
+        crate::sherpa::ensure(&data, crate::sherpa::Tool::Tts, Arc::new(AtomicBool::new(false)), |_, _| {}).await.unwrap();
         let text = "Ogni mattina Marta saliva le scale strette del vecchio faro. Dall'alto, il mare sembrava infinito e tranquillo. Le piaceva ascoltare il vento mentre il sole sorgeva lentamente dietro le nuvole.\n\nUn giorno trovò una lettera nascosta tra due pietre. La carta era umida, ma le parole si potevano ancora leggere: «Se stai leggendo queste righe, non sei sola».";
         let t = Instant::now();
         let mut steps = 0;
@@ -779,7 +712,7 @@ mod live {
         let t = Instant::now();
         let mut last = 0u64;
         models::download(&data, m, Arc::new(AtomicBool::new(false)), |e| {
-            if let DownloadEvent::Progress { received, total, .. } = e {
+            if let models::DownloadEvent::Progress { received, total, .. } = e {
                 assert!(received >= last && received <= total + 1024, "progression {received}/{total}");
                 last = received;
             }

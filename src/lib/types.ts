@@ -54,6 +54,16 @@ export interface LessonSummary {
   cover_path: string | null;
 }
 
+/** Ce qui reconnaît une leçon dans Découvrir et la recherche (miroir de `db::LessonLink`). */
+export interface LessonLink {
+  id: number;
+  source: string;
+  title: string;
+  /** artiste d'une chanson, émission, chaîne */
+  collection: string;
+  kind: string;
+}
+
 export interface Lesson {
   id: number;
   lang: LangCode;
@@ -88,6 +98,33 @@ export interface Playlist {
   /** leçon où la lecture de la playlist en est (null : elle repart du début) */
   current: number | null;
   created_at: number;
+  /** « book » : les chapitres d'un livre importé ; vide : une playlist faite à la main */
+  kind: string;
+  /** en boucle : après la dernière leçon, l'écoute reprend à la première */
+  looping: boolean;
+}
+
+/** Un chapitre (ou une partie d'un long chapitre) d'un livre importé. */
+export interface BookChapter {
+  title: string;
+  text: string;
+}
+
+/** Livre importé (EPUB, ou long PDF et long texte découpés en parties). */
+export interface NewBook {
+  lang: LangCode;
+  title: string;
+  /** genre des leçons : « book » (EPUB), « pdf », « text »… */
+  kind: string;
+  source: string;
+  chapters: BookChapter[];
+}
+
+export interface CreatedBook {
+  /** playlist du livre */
+  playlist: number;
+  /** chapitres, dans l'ordre du livre */
+  lessons: number[];
 }
 
 export interface PlaylistPatch {
@@ -95,6 +132,7 @@ export interface PlaylistPatch {
   lessons?: number[];
   /** 0 : la playlist repart du début */
   current?: number;
+  looping?: boolean;
 }
 
 export interface OpenedLesson {
@@ -217,7 +255,7 @@ export interface GpuInfo {
 
 export interface ModelRow {
   id: string;
-  /** asr : Whisper (transcription et minutage des mots) ; asrtext : Qwen3-ASR (texte plus juste) */
+  /** asr : Whisper (transcription et minutage des mots) ; asrtext : Qwen3-ASR ou Parakeet (texte plus juste) */
   kind: "llm" | "asr" | "asrtext" | "tts";
   name: string;
   detail: string;
@@ -477,6 +515,8 @@ export interface SearchHit {
 export interface SearchPage {
   hits: SearchHit[];
   more: boolean;
+  /** période retenue pour un tri par date sur YouTube (« up:3 », « before:2014-01-01 »), renvoyée pour les pages suivantes */
+  window: string;
 }
 
 /** Adresses de lecture d'une vidéo ou d'un son, pour l'aperçu (miroir de `search::Stream`). */
@@ -544,6 +584,21 @@ export interface OnlineCheck {
   model: string;
   /** temps d'une petite réponse, en millisecondes */
   ms: number;
+}
+
+/** Connexion à ChatGPT de cet appareil (miroir de `chatgpt::Status`). */
+export interface ChatGptStatus {
+  signed_in: boolean;
+  email: string;
+  /** le forfait peut servir (abonnement Plus ou Pro, permission accordée) */
+  plan: boolean;
+  /** connexion à refaire (renouvellement refusé, accès retiré dans ChatGPT) */
+  expired: boolean;
+  requests_today: number;
+  /** limite du forfait atteinte : traductions sur l'appareil pendant encore… (minutes) */
+  paused_minutes: number | null;
+  /** réglages d'utilisation de ChatGPT */
+  manage_url: string;
 }
 
 /** Niveau estimé d'après les mots connus regroupés par lemme (miroir de `level::Estimate`). */
@@ -646,6 +701,38 @@ export interface BackupInfo {
   name: string;
   avatar: string;
   photo: string;
+}
+
+/** L'appareil : modèle, mémoire, chaleur (miroir de `proc::DeviceInfo`). */
+export interface DeviceInfo {
+  /** « iPhone17,1 », « Mac15,9 » */
+  machine: string;
+  /** octets */
+  memory: number;
+  /** octets que le système laisse encore à Lumen (iPhone et iPad ; 0 ailleurs) */
+  available: number;
+  /** "nominal", "fair", "serious", "critical" ; vide si inconnue */
+  thermal: string;
+}
+
+/** Ce qu'a apporté une synchronisation (miroir de `sync::Report`). */
+export interface SyncReport {
+  /** mots ajoutés ou mis à jour */
+  terms: number;
+  /** mots connus de plus */
+  known: number;
+  /** leçons arrivées */
+  lessons: number;
+  /** leçons dont l'avancement a été repris */
+  progress: number;
+  /** leçons et mots supprimés ici parce qu'ils l'ont été là-bas */
+  removed: number;
+}
+
+/** Synchronisation faite : de quel appareil, et ce qu'elle a apporté (événement « synced »). */
+export interface Synced {
+  device_name: string;
+  report: SyncReport;
 }
 
 export interface BackupRestored {

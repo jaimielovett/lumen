@@ -1,8 +1,12 @@
 #[macro_use]
 mod i18n;
 mod ai;
+// iPhone et iPad : pont vers l'interface d'iOS (dossiers de l'app Fichiers, iCloud, haptique)
+#[cfg(target_os = "ios")]
+mod ios;
 mod asr;
 mod backup;
+mod chatgpt;
 mod commands;
 mod compress;
 mod db;
@@ -16,33 +20,47 @@ mod lyrics;
 mod media;
 mod models;
 mod online;
+mod parakeet;
 mod podcast;
 mod proc;
 mod search;
+mod sherpa;
+// iPhone et iPad : la voix et Parakeet par la bibliothèque sherpa-onnx, dans l'app
+#[cfg(target_os = "ios")]
+mod sherpa_ios;
 mod state;
+mod sync;
 mod text;
 mod tools;
 mod user;
 mod voice;
 #[cfg(windows)]
 mod vulkan;
+// Whisper dans l'app : iPhone et iPad (essais sur Mac : LUMEN_WHISPER_INAPP=1)
+#[cfg(whisper_inapp)]
+mod whisper;
+mod ytnative;
 #[cfg(windows)]
 mod win;
 
 use std::collections::HashMap;
 
 use parking_lot::Mutex;
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 
+// iPhone et iPad : point d'entrée appelé par le projet Xcode (gen/apple)
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
+    let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_opener::init());
+    // mises à jour et relance : Mac et Windows (sur iPhone et iPad, l'App Store s'en charge)
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build()).plugin(tauri_plugin_process::init());
+    builder
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
+            // connexion à ChatGPT (jetons hors de la base, propres à cet appareil)
+            chatgpt::init(&data_dir);
             let conn = db::open(&db::path(&data_dir))?;
             // langue de l'interface, des messages et des traductions
             i18n::set(&db::setting(&conn, "ui_lang").unwrap_or_default());
@@ -50,6 +68,8 @@ pub fn run() {
             ai::set_gpu(db::setting(&conn, "ai_gpu").as_deref() != Some("0"));
             // allègement des médias : fichiers d'un travail interrompu, originaux mis de côté
             compress::sweep(&media::media_dir(&data_dir), |p| db::media_used(&conn, p, None));
+            // iPhone et iPad : le dossier de l'app change à chaque mise à jour ; les médias suivent
+            let _ = db::rebase_media(&conn, &media::media_dir(&data_dir));
             let resource_dir = app.path().resource_dir()?.join("dicts");
             let dicts = dict::Dicts::new(resource_dir, dict::dict_dir(&data_dir));
             let discover = discover::Store::open(&data_dir);
@@ -68,9 +88,10 @@ pub fn run() {
             });
             // barre des menus (construite par l'interface, lib/menu.ts) : l'élément choisi lui
             // revient par son identifiant ; les actions JavaScript des éléments de sous-menus
-            // sont oubliées par Tauri dès leur création
+            // sont oubliées par Tauri dès leur création (pas de barre des menus sur iPhone et iPad)
+            #[cfg(desktop)]
             app.on_menu_event(|app, event| {
-                let _ = app.emit("menu", event.id().as_ref());
+                let _ = tauri::Emitter::emit(app, "menu", event.id().as_ref());
             });
             // sauvegarde automatique, au plus toutes les 10 minutes
             tauri::async_runtime::spawn(backup::auto_loop(app.handle().clone()));
@@ -89,11 +110,15 @@ pub fn run() {
             commands::lesson_update,
             commands::lesson_delete,
             commands::lessons_delete,
+            commands::lessons_set_completed,
             commands::lesson_set_cover,
+            commands::lesson_cover_fetch,
+            commands::lesson_links,
             commands::playlists_list,
             commands::playlist_create,
             commands::playlist_update,
             commands::playlist_delete,
+            commands::book_create,
             commands::term_set,
             commands::terms_mark_known,
             commands::terms_list,
@@ -137,6 +162,11 @@ pub fn run() {
             commands::backup_restore,
             commands::backup_places,
             commands::backup_place_dir,
+            commands::backup_pick_folder,
+            commands::backup_sync,
+            commands::backup_merge,
+            commands::haptic,
+            commands::device_info,
             commands::discover_list,
             commands::discover_refresh,
             commands::discover_mark,
@@ -149,6 +179,9 @@ pub fn run() {
             commands::gemini_check,
             commands::google_tts_check,
             commands::online_check,
+            commands::chatgpt_status,
+            commands::chatgpt_sign_in,
+            commands::chatgpt_sign_out,
             commands::podcast_create,
             commands::level_estimate,
             commands::text_stats,

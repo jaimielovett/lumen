@@ -14,7 +14,7 @@ import { pickFiles, pickSavePath } from "./dialogs";
 import { isEn, t } from "./i18n";
 import { MEDIA_EXT, TEXT_EXT } from "./importers";
 import { langInfo } from "./langs";
-import { isWindows, joinPath } from "./platform";
+import { isMobile, isWindows, joinPath } from "./platform";
 import { LOOK_DEFAULTS, PAPERS, playbackRates, READ_FONTS, SIZE_MAX, SIZE_MIN } from "./reading";
 import { useApp, type View } from "./store";
 import { useUpdate } from "./updater";
@@ -27,6 +27,8 @@ export interface LessonMenu {
   video: boolean;
   /** panneau du mot flottant (sinon à droite) */
   float: boolean;
+  /** playlist suivie en boucle ; null : pas de playlist (ou un livre) */
+  loop: boolean | null;
 }
 
 /** Actions du lecteur, appelées par le menu Leçon. */
@@ -40,11 +42,15 @@ export interface LessonActions {
   chat(): void;
   simplify(): void;
   cinema(): void;
+  /** fermer la vidéo, ou la faire revenir */
+  video(): void;
   playlist(): void;
   cover(): void;
   remove(): void;
   /** panneau du mot : à droite ou flottant */
   panel(): void;
+  /** playlist suivie : en boucle ou non */
+  loop(): void;
 }
 
 interface MenuState {
@@ -73,9 +79,9 @@ export function useLessonMenu(flags: LessonMenu | null, actions: LessonActions) 
   useEffect(() => {
     lessonActions = actions;
   });
-  const key = flags ? [flags.media, flags.video, flags.float].map(Number).join("") : "";
+  const key = flags ? [flags.media, flags.video, flags.float].map(Number).join("") + (flags.loop === null ? "-" : Number(flags.loop)) : "";
   useEffect(() => {
-    useMenu.setState({ lesson: key ? { media: key[0] === "1", video: key[1] === "1", float: key[2] === "1" } : null });
+    useMenu.setState({ lesson: key ? { media: key[0] === "1", video: key[1] === "1", float: key[2] === "1", loop: key[3] === "-" ? null : key[3] === "1" } : null });
   }, [key]);
   useEffect(
     () => () => {
@@ -171,18 +177,18 @@ async function revealData() {
 async function switchLang(code: LangCode) {
   const app = useApp.getState();
   if (app.lang() === code) return;
-  await app.setSetting("lang", code);
-  await app.refreshKnown();
   const v = app.view;
   // une leçon, une conversation ou une playlist d'une autre langue n'ont plus leur place
+  // (on quitte la leçon avant : la lecture en cours change avec la langue)
   app.go(v === "reader" || v === "chat" || v === "playlists" ? "library" : v);
+  await app.setSetting("lang", code);
+  await app.refreshKnown();
 }
 
-/** Rouvre la leçon en cours (celle du dernier lancement, s'il le faut). */
+/** Rouvre la lecture en cours de la langue étudiée. */
 function resumeLesson() {
   const a = useApp.getState();
-  const id = a.lessonId ?? Number(a.settings.last_lesson);
-  if (id) a.openLesson(id);
+  if (a.lessonId) a.openLesson(a.lessonId);
 }
 
 function toggleSidebar() {
@@ -244,7 +250,7 @@ function sub(text: string, items: Item[], enabled = true): SubmenuOptions {
   return { text, items, enabled };
 }
 
-const LOOK_KEYS = ["read_font", "read_paper", "font_size", "line_height", "read_width", "reader_layout", "word_style", "word_panel", "theme", "reader_sidebar", "auto_turn", "media_rate", "tts_rate"] as const;
+const LOOK_KEYS = ["read_font", "read_paper", "font_size", "line_height", "read_width", "reader_layout", "word_style", "word_panel", "theme", "reader_sidebar", "auto_turn", "media_rate", "tts_rate", "library_view", "video_show"] as const;
 
 /** Ce dont le menu dépend : il n'est refait que si cela change. */
 function snapshot() {
@@ -259,7 +265,7 @@ function snapshot() {
     calm: !app.ready || !s.onboarded || app.replay || app.tour !== null,
     view: app.view,
     lesson: app.view === "reader" ? m.lesson : null,
-    resume: app.view !== "reader" && !!(app.lessonId ?? s.last_lesson),
+    resume: app.view !== "reader" && !!app.lessonId,
     lang: app.lang(),
     langs: app.langs(),
     look: Object.fromEntries(LOOK_KEYS.map((k) => [k, get(k)])) as Record<(typeof LOOK_KEYS)[number], string>,
@@ -347,7 +353,12 @@ function viewMenu(s: Snap): SubmenuOptions {
     ["vocab", t("Vocabulaire", "Vocabulary"), "5"],
     ["progress", t("Progrès", "Progress"), "6"],
   ];
-  const { theme, reader_sidebar: sidebar } = s.look;
+  const { theme, reader_sidebar: sidebar, library_view: shelf } = s.look;
+  const shelves: [string, string][] = [
+    ["large", t("En grandes cartes", "as Large Cards")],
+    ["small", t("En petites cartes", "as Small Cards")],
+    ["list", t("En liste", "as List")],
+  ];
   const themes: [string, string][] = [
     ["light", t("Clair", "Light")],
     ["dark", t("Sombre", "Dark")],
@@ -363,6 +374,17 @@ function viewMenu(s: Snap): SubmenuOptions {
         sep,
         act(t("Ajouter une langue…", "Add a Language…"), () => app().openSettings("langs"), { on }),
       ],
+      on,
+    ),
+    // la bibliothèque, comme une fenêtre du Finder : par cartes ou par liste
+    sub(
+      t("Bibliothèque", "Library"),
+      shelves.map(([v, label]) =>
+        pick(label, (shelf || "large") === v, () => {
+          void app().setSetting("library_view", v);
+          app().go("library");
+        }, { on }),
+      ),
       on,
     ),
     sep,
@@ -479,9 +501,11 @@ function lessonMenu(s: Snap): SubmenuOptions {
     sep,
     act(t("Discuter de la leçon", "Chat About the Lesson"), onLesson((a) => a.chat()), { on }),
     act(t("Simplifier…", "Simplify…"), onLesson((a) => a.simplify()), { on }),
+    pick(t("Afficher la vidéo", "Show Video"), s.look.video_show !== "0", onLesson((a) => a.video()), { on: on && !!l?.video }),
     act(t("Regarder en plein écran", "Watch Full Screen"), onLesson((a) => a.cinema()), { on: on && !!l?.video }),
     sep,
     act(t("Ajouter à une playlist…", "Add to a Playlist…"), onLesson((a) => a.playlist()), { on }),
+    pick(t("Lire la playlist en boucle", "Loop Playlist"), !!l?.loop, onLesson((a) => a.loop()), { on: on && l?.loop != null }),
     act(t("Choisir une couverture…", "Choose a Cover…"), onLesson((a) => a.cover()), { on }),
     sep,
     act(t("Supprimer la leçon…", "Delete Lesson…"), onLesson((a) => a.remove()), { on }),
@@ -533,7 +557,8 @@ async function install() {
 /** Installe la barre des menus et la tient à jour (appelé une fois, dans App). */
 export function useAppMenu() {
   useEffect(() => {
-    if (!isTauri || !navigator.userAgent.includes("Mac")) return;
+    // barre des menus : Mac seulement (l'iPhone se dit aussi « like Mac OS X »)
+    if (!isTauri || isMobile || !navigator.userAgent.includes("Mac")) return;
     let last = "";
     let timer = 0;
     const check = () => {

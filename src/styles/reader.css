@@ -1136,6 +1136,13 @@ span.player-voice .icon-btn {
   font-weight: 500;
   color: var(--muted);
 }
+.pl-strip .pl-strip-loop {
+  color: var(--muted);
+}
+.pl-strip .pl-strip-loop.on {
+  color: var(--light-strong);
+  background: var(--light-veil);
+}
 .up-next {
   position: absolute;
   z-index: 15;
@@ -1219,6 +1226,23 @@ span.player-voice .icon-btn {
 }
 
 /* ---------- scène vidéo ---------- */
+
+/* enveloppe qui se replie quand on ferme la vidéo (hauteur animée par motion) */
+.video-shell {
+  flex-shrink: 0;
+}
+/* plein écran : la scène occupe la colonne comme si l'enveloppe n'existait pas */
+.reader.cinema .video-shell {
+  display: contents;
+}
+/* vidéo fermée : le bouton qui la fait revenir, dans la barre du haut */
+.video-back {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.video-back .btn {
+  gap: 6px;
+}
 
 .video-stage {
   flex-shrink: 0;

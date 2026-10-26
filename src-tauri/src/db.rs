@@ -8,6 +8,8 @@ use chrono::{Datelike, Months, NaiveDate};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
+use sha2::{Digest, Sha256};
+
 use crate::text;
 
 pub const STATUS_KNOWN: i64 = 4;
@@ -105,6 +107,12 @@ pub fn open(path: &Path) -> Result<Connection> {
         CREATE INDEX IF NOT EXISTS playlist_items_lesson ON playlist_items(lesson_id);
         "#,
     )?;
+    // « book » : les chapitres d'un livre importé, réunis en une seule carte dans la bibliothèque
+    if add_column(&conn, "playlists", "kind", "TEXT NOT NULL DEFAULT ''")? {
+        gather_old_books(&conn)?;
+    }
+    // playlist en boucle : après la dernière leçon, l'écoute reprend à la première
+    add_column(&conn, "playlists", "looping", "INTEGER NOT NULL DEFAULT 0")?;
     // chat : conversations (une leçon peut y être jointe) et leurs messages
     conn.execute_batch(
         r#"
@@ -129,6 +137,16 @@ pub fn open(path: &Path) -> Result<Connection> {
         CREATE INDEX IF NOT EXISTS chat_messages_chat ON chat_messages(chat_id, id);
         "#,
     )?;
+    // synchronisation entre appareils (sync.rs) : identifiant d'une leçon, le même sur
+    // chaque appareil (tiré de la leçon elle-même), et trace de ce qui a été supprimé
+    add_column(&conn, "lessons", "uid", "TEXT")?;
+    conn.execute_batch(
+        r#"
+        CREATE INDEX IF NOT EXISTS lessons_uid ON lessons(uid);
+        CREATE TABLE IF NOT EXISTS tombstones(kind TEXT NOT NULL, key TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(kind, key));
+        "#,
+    )?;
+    ensure_uids(&conn)?;
     // progrès : temps actif passé dans les leçons, et jours où l'objectif est atteint (série)
     add_column(&conn, "activity", "learn_secs", "INTEGER NOT NULL DEFAULT 0")?;
     if add_column(&conn, "activity", "goal_met", "INTEGER NOT NULL DEFAULT 0")? {
@@ -137,6 +155,34 @@ pub fn open(path: &Path) -> Result<Connection> {
         conn.execute_batch("UPDATE activity SET goal_met=1 WHERE words_read>0 OR listen_secs>=60;")?;
     }
     Ok(conn)
+}
+
+/// Livres EPUB importés avant les livres : leurs chapitres (même collection, importés
+/// ensemble, dans l'ordre) deviennent un livre, une seule carte dans la bibliothèque.
+/// Rien n'est supprimé ni modifié dans les leçons.
+fn gather_old_books(conn: &Connection) -> Result<()> {
+    let groups: Vec<(String, String, i64)> = conn
+        .prepare(
+            "SELECT lang, collection, MIN(created_at) FROM lessons
+             WHERE kind='book' AND collection<>'' GROUP BY lang, collection HAVING COUNT(*) >= 2",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    if groups.is_empty() {
+        return Ok(());
+    }
+    let tx = conn.unchecked_transaction()?;
+    for (lang, collection, created) in groups {
+        let ids: Vec<i64> = tx
+            .prepare("SELECT id FROM lessons WHERE kind='book' AND lang=?1 AND collection=?2 ORDER BY created_at, id")?
+            .query_map(params![lang, collection], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        tx.execute("INSERT INTO playlists(lang,name,created_at,kind) VALUES(?1,?2,?3,'book')", params![lang, playlist_name(&collection), created])?;
+        let id = tx.last_insert_rowid();
+        playlist_fill(&tx, id, &ids)?;
+    }
+    tx.commit()?;
+    Ok(())
 }
 
 /// Ajoute une colonne si elle manque. Renvoie `true` si elle vient d'être créée.
@@ -271,12 +317,76 @@ fn hue_for(title: &str) -> i64 {
 
 pub fn lesson_create(c: &Connection, l: &NewLesson) -> Result<i64> {
     let wc = text::word_count(&l.text, &l.lang) as i64;
+    let at = now();
     c.execute(
-        "INSERT INTO lessons(lang,title,collection,kind,source,text,media_path,timings,hue,word_count,created_at,video_path)
-         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
-        params![l.lang, l.title, l.collection, l.kind, l.source, l.text, l.media_path, l.timings, hue_for(&l.title), wc, now(), l.video_path],
+        "INSERT INTO lessons(lang,title,collection,kind,source,text,media_path,timings,hue,word_count,created_at,video_path,uid)
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+        params![l.lang, l.title, l.collection, l.kind, l.source, l.text, l.media_path, l.timings, hue_for(&l.title), wc, at, l.video_path, lesson_uid(&l.lang, at, &l.title, None)],
     )?;
     Ok(c.last_insert_rowid())
+}
+
+/// Identifiant d'une leçon, le même sur chaque appareil : tiré de ce qui ne change pas
+/// (langue, instant de création, titre de départ, origine LingQ). Une leçon d'avant les
+/// identifiants, restaurée sur un autre appareil, y retrouve ainsi le même.
+pub fn lesson_uid(lang: &str, created_at: i64, title: &str, ext_id: Option<&str>) -> String {
+    let mut h = Sha256::new();
+    h.update(format!("lumen-lecon\u{1f}{lang}\u{1f}{created_at}\u{1f}{title}\u{1f}{}", ext_id.unwrap_or("")).as_bytes());
+    hex::encode(&h.finalize()[..10])
+}
+
+/// Chemins des médias ramenés dans le dossier de données actuel, quand le fichier n'est
+/// plus à l'ancien chemin mais bien dans `media_dir` : sur iPhone et iPad, iOS change
+/// le dossier de l'app à chaque mise à jour (le simulateur, à chaque installation).
+/// Renvoie le nombre de chemins corrigés.
+pub fn rebase_media(c: &Connection, media_dir: &Path) -> Result<usize> {
+    let rows: Vec<(i64, [Option<String>; 3])> = c
+        .prepare("SELECT id, media_path, video_path, cover_path FROM lessons WHERE media_path IS NOT NULL OR video_path IS NOT NULL OR cover_path IS NOT NULL")?
+        .query_map([], |r| Ok((r.get(0)?, [r.get(1)?, r.get(2)?, r.get(3)?])))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut fixed = 0;
+    for (id, paths) in rows {
+        let mut new = paths.clone();
+        for p in new.iter_mut().flatten() {
+            if Path::new(p.as_str()).exists() {
+                continue;
+            }
+            // un chemin écrit sur un autre système peut avoir l'une ou l'autre forme
+            let name = p.rsplit(['/', '\\']).next().unwrap_or_default();
+            let here = media_dir.join(name);
+            if !name.is_empty() && here.is_file() {
+                *p = here.display().to_string();
+                fixed += 1;
+            }
+        }
+        if new != paths {
+            c.execute("UPDATE lessons SET media_path=?1, video_path=?2, cover_path=?3 WHERE id=?4", params![new[0], new[1], new[2], id])?;
+        }
+    }
+    Ok(fixed)
+}
+
+/// Donne leur identifiant aux leçons qui n'en ont pas encore (bases d'avant).
+pub fn ensure_uids(c: &Connection) -> Result<()> {
+    let rows: Vec<(i64, String, i64, String, Option<String>)> = c
+        .prepare("SELECT id, lang, created_at, title, ext_id FROM lessons WHERE uid IS NULL OR uid=''")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut st = c.prepare("UPDATE lessons SET uid=?1 WHERE id=?2")?;
+    for (id, lang, at, title, ext) in rows {
+        st.execute(params![lesson_uid(&lang, at, &title, ext.as_deref()), id])?;
+    }
+    Ok(())
+}
+
+/// Trace d'une suppression (« lesson » : identifiant de la leçon ; « term » :
+/// « langue|mot ») : la synchronisation ne fait pas revenir ce qui a été supprimé.
+pub fn tombstone(c: &Connection, kind: &str, key: &str) -> Result<()> {
+    c.execute(
+        "INSERT INTO tombstones(kind,key,at) VALUES(?1,?2,?3) ON CONFLICT(kind,key) DO UPDATE SET at=excluded.at",
+        params![kind, key, now()],
+    )?;
+    Ok(())
 }
 
 pub fn status_map(c: &Connection, lang: &str) -> Result<HashMap<String, i64>> {
@@ -429,10 +539,28 @@ pub fn lesson_update(c: &Connection, id: i64, p: &LessonPatch) -> Result<()> {
     Ok(())
 }
 
+/// Marque des leçons lues (ou non lues) d'un coup : une playlist, une sélection.
+/// Ni les mots ni la page atteinte ne changent : « non lue » rend l'avancement d'avant.
+pub fn lessons_set_completed(c: &mut Connection, ids: &[i64], completed: bool) -> Result<()> {
+    let tx = c.transaction()?;
+    {
+        let mut st = tx.prepare_cached("UPDATE lessons SET completed=?1 WHERE id=?2")?;
+        for &id in ids {
+            st.execute(params![completed as i64, id])?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 pub fn lesson_delete(c: &Connection, id: i64) -> Result<Vec<String>> {
     let files: Option<(Option<String>, Option<String>, Option<String>)> = c
         .query_row("SELECT media_path, video_path, cover_path FROM lessons WHERE id=?1", [id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .optional()?;
+    let uid: Option<String> = c.query_row("SELECT uid FROM lessons WHERE id=?1", [id], |r| r.get(0)).optional()?.flatten();
+    if let Some(u) = uid.filter(|u| !u.is_empty()) {
+        tombstone(c, "lesson", &u)?;
+    }
     c.execute("DELETE FROM lessons WHERE id=?1", [id])?;
     let mut out = Vec::new();
     if let Some((a, v, cover)) = files {
@@ -454,10 +582,7 @@ pub fn lessons_delete(c: &mut Connection, ids: &[i64]) -> Result<Vec<String>> {
     }
     files.sort();
     files.dedup();
-    files.retain(|f| {
-        let used = "SELECT 1 FROM lessons WHERE media_path=?1 OR video_path=?1 OR cover_path=?1 LIMIT 1";
-        tx.query_row(used, [f], |_| Ok(())).optional().ok().flatten().is_none()
-    });
+    files.retain(|f| !file_used(&tx, f));
     tx.commit()?;
     Ok(files)
 }
@@ -543,11 +668,35 @@ pub fn lesson_set_cover(c: &Connection, id: i64, path: Option<&str>) -> Result<O
     Ok(old)
 }
 
+/// Le fichier est-il encore cité par une leçon (son, image, couverture) ? Les chapitres
+/// d'un livre partagent sa couverture : on ne la supprime qu'une fois la dernière partie.
+pub fn file_used(c: &Connection, path: &str) -> bool {
+    let sql = "SELECT 1 FROM lessons WHERE media_path=?1 OR video_path=?1 OR cover_path=?1 LIMIT 1";
+    c.query_row(sql, [path], |_| Ok(())).optional().ok().flatten().is_some()
+}
+
 /// (identifiant, source) des leçons d'une langue : Découvrir y reconnaît ce qui est déjà importé.
 pub fn lesson_sources(c: &Connection, lang: &str) -> Result<Vec<(i64, String)>> {
     let mut st = c.prepare("SELECT id, source FROM lessons WHERE lang=?1")?;
     let rows = st.query_map([lang], |r| Ok((r.get(0)?, r.get(1)?)))?;
     Ok(rows.filter_map(|r| r.ok()).collect())
+}
+
+/// Ce qui reconnaît une leçon dans Découvrir et la recherche : son origine (même page,
+/// même vidéo), et pour une chanson son titre et son artiste (collection).
+#[derive(Serialize, Debug)]
+pub struct LessonLink {
+    pub id: i64,
+    pub source: String,
+    pub title: String,
+    pub collection: String,
+    pub kind: String,
+}
+
+pub fn lesson_links(c: &Connection, lang: &str) -> Result<Vec<LessonLink>> {
+    let mut st = c.prepare("SELECT id, source, title, collection, kind FROM lessons WHERE lang=?1")?;
+    let rows = st.query_map([lang], |r| Ok(LessonLink { id: r.get(0)?, source: r.get(1)?, title: r.get(2)?, collection: r.get(3)?, kind: r.get(4)? }))?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
 /// Leçon déjà importée depuis cette origine ?
@@ -572,6 +721,10 @@ pub struct Playlist {
     /// leçon où la lecture de la playlist en est (aucune : elle repart du début)
     pub current: Option<i64>,
     pub created_at: i64,
+    /// « book » : un livre importé (ses chapitres) ; vide : une playlist faite à la main
+    pub kind: String,
+    /// en boucle : après la dernière leçon, l'écoute reprend à la première
+    pub looping: bool,
 }
 
 #[derive(Deserialize, Debug, Default)]
@@ -580,6 +733,7 @@ pub struct PlaylistPatch {
     pub lessons: Option<Vec<i64>>,
     /// 0 : la playlist repart du début
     pub current: Option<i64>,
+    pub looping: Option<bool>,
 }
 
 /// Nom propre, jamais vide, de longueur raisonnable.
@@ -589,10 +743,19 @@ fn playlist_name(name: &str) -> String {
 }
 
 pub fn playlists_list(c: &Connection, lang: &str) -> Result<Vec<Playlist>> {
-    let mut st = c.prepare("SELECT id,lang,name,current_id,created_at FROM playlists WHERE lang=?1 ORDER BY created_at DESC, id DESC")?;
+    let mut st = c.prepare("SELECT id,lang,name,current_id,created_at,kind,looping FROM playlists WHERE lang=?1 ORDER BY created_at DESC, id DESC")?;
     let mut out = st
         .query_map([lang], |r| {
-            Ok(Playlist { id: r.get(0)?, lang: r.get(1)?, name: r.get(2)?, lessons: Vec::new(), current: r.get(3)?, created_at: r.get(4)? })
+            Ok(Playlist {
+                id: r.get(0)?,
+                lang: r.get(1)?,
+                name: r.get(2)?,
+                lessons: Vec::new(),
+                current: r.get(3)?,
+                created_at: r.get(4)?,
+                kind: r.get(5)?,
+                looping: r.get::<_, i64>(6)? != 0,
+            })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     let mut items = c.prepare_cached("SELECT lesson_id FROM playlist_items WHERE playlist_id=?1 ORDER BY position")?;
@@ -642,6 +805,9 @@ pub fn playlist_update(c: &mut Connection, id: i64, p: &PlaylistPatch) -> Result
     if let Some(cur) = p.current {
         tx.execute("UPDATE playlists SET current_id=?1 WHERE id=?2", params![(cur > 0).then_some(cur), id])?;
     }
+    if let Some(v) = p.looping {
+        tx.execute("UPDATE playlists SET looping=?1 WHERE id=?2", params![v as i64, id])?;
+    }
     tx.commit()?;
     Ok(())
 }
@@ -649,6 +815,68 @@ pub fn playlist_update(c: &mut Connection, id: i64, p: &PlaylistPatch) -> Result
 pub fn playlist_delete(c: &Connection, id: i64) -> Result<()> {
     c.execute("DELETE FROM playlists WHERE id=?1", [id])?;
     Ok(())
+}
+
+// ---------- livres ----------
+
+/// Un chapitre (ou une partie d'un long chapitre) : une leçon du livre.
+#[derive(Deserialize, Clone, Debug)]
+pub struct BookChapter {
+    pub title: String,
+    pub text: String,
+}
+
+/// Livre importé (EPUB, ou long PDF et long texte découpés en parties).
+#[derive(Deserialize, Clone, Debug)]
+pub struct NewBook {
+    pub lang: String,
+    pub title: String,
+    /// genre des leçons : « book » (EPUB), « pdf », « text »…
+    #[serde(default = "book_kind")]
+    pub kind: String,
+    #[serde(default)]
+    pub source: String,
+    pub chapters: Vec<BookChapter>,
+}
+fn book_kind() -> String {
+    "book".into()
+}
+
+/// Crée les chapitres d'un livre et leur playlist (`kind` = « book ») d'un seul geste :
+/// jamais de livre à moitié créé. Les chapitres partagent la couverture du livre.
+/// Renvoie la playlist et les leçons, dans l'ordre du livre.
+pub fn book_create(c: &mut Connection, b: &NewBook, cover: Option<&str>) -> Result<(i64, Vec<i64>)> {
+    let title = playlist_name(&b.title);
+    let tx = c.transaction()?;
+    let mut ids = Vec::new();
+    for ch in b.chapters.iter().filter(|ch| !ch.text.trim().is_empty()) {
+        let id = lesson_create(
+            &tx,
+            &NewLesson {
+                lang: b.lang.clone(),
+                title: ch.title.clone(),
+                collection: title.clone(),
+                kind: b.kind.clone(),
+                source: b.source.clone(),
+                text: ch.text.clone(),
+                media_path: None,
+                timings: None,
+                video_path: None,
+            },
+        )?;
+        if cover.is_some() {
+            tx.execute("UPDATE lessons SET cover_path=?1 WHERE id=?2", params![cover, id])?;
+        }
+        ids.push(id);
+    }
+    if ids.is_empty() {
+        anyhow::bail!(crate::i18n::t("Aucun chapitre lisible dans ce livre.", "No readable chapter in this book."));
+    }
+    tx.execute("INSERT INTO playlists(lang,name,created_at,kind) VALUES(?1,?2,?3,'book')", params![b.lang, title, now()])?;
+    let id = tx.last_insert_rowid();
+    playlist_fill(&tx, id, &ids)?;
+    tx.commit()?;
+    Ok((id, ids))
 }
 
 // ---------- chat ----------
@@ -921,6 +1149,9 @@ pub fn term_set(c: &Connection, u: &TermUpdate) -> Result<()> {
         .optional()?;
     if u.status == 0 {
         c.execute("DELETE FROM terms WHERE lang=?1 AND term=?2", params![u.lang, term])?;
+        if prev.is_some() {
+            tombstone(c, "term", &format!("{}|{}", u.lang, term))?;
+        }
         if prev == Some(STATUS_KNOWN) {
             bump(c, &u.lang, "known_added", -1)?;
         }
@@ -1398,12 +1629,20 @@ pub fn goal_refresh(c: &Connection) -> Result<()> {
 
 // ---------- cache de traduction ----------
 
+/// Une réponse sans une seule lettre (« !!!! » d'un calcul faux) n'est ni gardée ni
+/// relue : le mot sera retraduit.
+fn has_letters(v: &str) -> bool {
+    v.chars().any(char::is_alphabetic)
+}
+
 pub fn cache_get(c: &Connection, k: &str) -> Option<String> {
-    c.query_row("SELECT v FROM tcache WHERE k=?1", [k], |r| r.get(0)).optional().ok().flatten()
+    c.query_row("SELECT v FROM tcache WHERE k=?1", [k], |r| r.get(0)).optional().ok().flatten().filter(|v: &String| has_letters(v))
 }
 
 pub fn cache_put(c: &Connection, k: &str, v: &str) {
-    let _ = c.execute("INSERT OR REPLACE INTO tcache(k,v,created_at) VALUES(?1,?2,?3)", params![k, v, now()]);
+    if has_letters(v) {
+        let _ = c.execute("INSERT OR REPLACE INTO tcache(k,v,created_at) VALUES(?1,?2,?3)", params![k, v, now()]);
+    }
 }
 
 pub fn export_csv(c: &Connection, lang: &str) -> Result<String> {
@@ -1614,6 +1853,71 @@ mod tests {
     }
 
     #[test]
+    fn books_gather_their_chapters() {
+        let path = std::env::temp_dir().join(format!("lumen-db-books-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let mut c = open(&path).unwrap();
+        let ch = |title: &str, text: &str| BookChapter { title: title.into(), text: text.into() };
+        let book = NewBook {
+            lang: "it".into(),
+            title: "  Il  barone ".into(),
+            kind: "book".into(),
+            source: String::new(),
+            chapters: vec![ch("Capitolo 1", "Era il quindici di giugno."), ch("Vuoto", "   "), ch("Capitolo 2", "Cosimo salì sull'albero.")],
+        };
+        let (pl, ids) = book_create(&mut c, &book, Some("/m/b.cover.jpg")).unwrap();
+        // le chapitre vide est écarté ; le livre devient la collection de ses chapitres
+        assert_eq!(ids.len(), 2);
+        let p = &playlists_list(&c, "it").unwrap()[0];
+        assert_eq!((p.id, p.name.as_str(), p.kind.as_str(), p.lessons.clone()), (pl, "Il barone", "book", ids.clone()));
+        let ls = lessons_list(&c, "it").unwrap();
+        assert!(ls.iter().all(|l| l.collection == "Il barone" && l.kind == "book" && l.cover_path.as_deref() == Some("/m/b.cover.jpg")));
+        // la couverture partagée reste tant qu'un chapitre la cite
+        assert!(lessons_delete(&mut c, &[ids[0]]).unwrap().is_empty());
+        assert!(file_used(&c, "/m/b.cover.jpg"));
+        assert_eq!(lessons_delete(&mut c, &[ids[1]]).unwrap(), vec!["/m/b.cover.jpg".to_string()]);
+        // une playlist faite à la main n'est pas un livre
+        playlist_create(&mut c, "it", "Mattina", &[]).unwrap();
+        assert!(playlists_list(&c, "it").unwrap().iter().any(|p| p.name == "Mattina" && p.kind.is_empty()));
+        // un livre sans texte n'est pas créé
+        let empty = NewBook { chapters: vec![ch("Rien", " ")], ..book };
+        assert!(book_create(&mut c, &empty, None).is_err());
+        assert_eq!(playlists_list(&c, "it").unwrap().len(), 2);
+        drop(c);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn old_books_are_gathered_once() {
+        let path = std::env::temp_dir().join(format!("lumen-db-oldbooks-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let c = open(&path).unwrap();
+        let mk = |kind: &str, collection: &str, title: &str| {
+            lesson_create(&c, &NewLesson {
+                lang: "fr".into(), title: title.into(), collection: collection.into(), kind: kind.into(),
+                source: String::new(), text: "Il était une fois.".into(), media_path: None, timings: None, video_path: None,
+            }).unwrap()
+        };
+        let (a, b, d) = (mk("book", "Le Petit Livre", "Chapitre 1"), mk("book", "Le Petit Livre", "Chapitre 2"), mk("book", "Le Petit Livre", "Chapitre 3"));
+        mk("book", "Seul", "Un chapitre");
+        mk("text", "Storie", "A");
+        mk("text", "Storie", "B");
+        // une base d'avant les livres : la colonne n'existe pas encore
+        c.execute_batch("ALTER TABLE playlists DROP COLUMN kind;").unwrap();
+        drop(c);
+        let c = open(&path).unwrap();
+        let ps = playlists_list(&c, "fr").unwrap();
+        assert_eq!(ps.len(), 1);
+        assert_eq!((ps[0].name.as_str(), ps[0].kind.as_str(), ps[0].lessons.clone()), ("Le Petit Livre", "book", vec![a, b, d]));
+        // une seule fois : rouvrir la base ne recrée rien
+        drop(c);
+        let c = open(&path).unwrap();
+        assert_eq!(playlists_list(&c, "fr").unwrap().len(), 1);
+        drop(c);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
     fn playlists_keep_order_and_follow_lessons() {
         let path = std::env::temp_dir().join(format!("lumen-db-playlists-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
@@ -1630,9 +1934,16 @@ mod tests {
         let id = playlist_create(&mut c, "en", "   ", &[b, a, b, other]).unwrap();
         let p = &playlists_list(&c, "en").unwrap()[0];
         assert_eq!((p.name.as_str(), p.lessons.clone(), p.current), ("Nouvelle playlist", vec![b, a], None));
-        playlist_update(&mut c, id, &PlaylistPatch { name: Some("  Le  matin ".into()), lessons: Some(vec![a, d, b]), current: Some(d) }).unwrap();
+        assert!(!p.looping);
+        playlist_update(&mut c, id, &PlaylistPatch { name: Some("  Le  matin ".into()), lessons: Some(vec![a, d, b]), current: Some(d), looping: Some(true) }).unwrap();
         let p = &playlists_list(&c, "en").unwrap()[0];
-        assert_eq!((p.name.as_str(), p.lessons.clone(), p.current), ("Le matin", vec![a, d, b], Some(d)));
+        assert_eq!((p.name.as_str(), p.lessons.clone(), p.current, p.looping), ("Le matin", vec![a, d, b], Some(d), true));
+        // toute la playlist lue, puis de nouveau à lire
+        lessons_set_completed(&mut c, &[a, d, b], true).unwrap();
+        assert!(lessons_list(&c, "en").unwrap().iter().all(|l| l.completed));
+        lessons_set_completed(&mut c, &[a], false).unwrap();
+        let done: Vec<(i64, bool)> = lessons_list(&c, "en").unwrap().iter().map(|l| (l.id, l.completed)).collect();
+        assert!(done.iter().all(|&(id, c)| c == (id != a)));
         // une leçon supprimée quitte la playlist, et n'y est plus « en cours »
         lesson_delete(&c, d).unwrap();
         let p = &playlists_list(&c, "en").unwrap()[0];

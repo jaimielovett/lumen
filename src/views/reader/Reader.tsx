@@ -5,11 +5,12 @@ import { Duration, Orb, Sheet } from "../../components/ui";
 import { api, errorText, isNoModel } from "../../lib/api";
 import { count, t } from "../../lib/i18n";
 import { LEVELS, langInfo } from "../../lib/langs";
+import { isBook, nextIn } from "../../lib/playlists";
 import { pronounce } from "../../lib/pronounce";
 import { studyTime, useStudyClock } from "../../lib/progress";
 import { formatNumber, useApp } from "../../lib/store";
 import { fitPages, pageOfToken } from "../../lib/pagefit";
-import { isWindows } from "../../lib/platform";
+import { isMobile, isWindows } from "../../lib/platform";
 import { panelMode, readerLook, roomForSidePanel } from "../../lib/reading";
 import { paginate, sentenceBounds, type PageRange } from "../../lib/tokenize";
 import type { LessonSummary, OpenedLesson, Term, Token } from "../../lib/types";
@@ -20,7 +21,7 @@ import { confirmAsk } from "../../lib/dialogs";
 import { useLessonMenu, useMenu } from "../../lib/menu";
 import { AddToPlaylist } from "../../components/AddToPlaylist";
 import { DisplayMenu } from "./Display";
-import { PlaylistStrip, UpNext, usePlaylist } from "./PlaylistBar";
+import { PlaylistStrip, UpNext, toggleLoop, usePlaylist } from "./PlaylistBar";
 import { AsideTabs, ReaderChat, type AsideTab } from "./ReaderChat";
 import { VideoStage } from "./VideoStage";
 import { WordFloat } from "./WordFloat";
@@ -147,6 +148,16 @@ export function Reader() {
   const [videoHost, setVideoHost] = useState<HTMLDivElement | null>(null);
   const [mediaPlaying, setMediaPlaying] = useState(false);
   const [cinema, setCinema] = useState(false);
+  // vidéo fermée (réglage video_show, gardé d'une leçon à l'autre) : le son continue et le
+  // texte prend toute la place ; elle revient par le bouton « Vidéo » du haut, V ou le menu Leçon
+  const videoShown = settings.video_show !== "0";
+  const showVideo = useCallback(
+    (on: boolean) => {
+      if (!on) setCinema(false);
+      void setSetting("video_show", on ? "1" : "0");
+    },
+    [setSetting],
+  );
   const onPlayback = useCallback((s: PlaybackState) => setMediaPlaying(s.playing), []);
   const lanternPage = useRef(-1);
   const lanternBox = useRef<{ y: number; height: number } | null>(null);
@@ -187,6 +198,8 @@ export function Reader() {
         setData(d);
         setTerms(d.terms);
         setPage(pg);
+        // la lecture en cours de sa langue
+        useApp.getState().settleLesson(d.lesson.lang);
       })
       .catch(() => {
         if (!alive) return;
@@ -281,10 +294,16 @@ export function Reader() {
     // écoutée jusqu'au bout : la dernière page est lue
     if (pageNow.current === pages.length - 1) logRead(creditPage(pageNow.current, false));
     if (!pl || !lesson) return;
-    const nextId = pl.lessons[pl.lessons.indexOf(lesson.id) + 1];
+    const nextId = nextIn(pl, lesson.id);
     if (!nextId) {
       toast(t(`Fin de la playlist « ${pl.name} »`, `End of the playlist “${pl.name}”`), "light");
       void api().playlistUpdate(pl.id, { current: 0 });
+      return;
+    }
+    // en boucle, une playlist d'une seule leçon la reprend aussitôt (réécouter, c'est relire)
+    if (nextId === lesson.id) {
+      readToks.current = new Uint8Array(readToks.current.length);
+      playerRef.current?.restart();
       return;
     }
     setCinema(false);
@@ -702,6 +721,12 @@ export function Reader() {
     setRange(null);
   };
   useEffect(() => {
+    // le toucher interrompu (défilement de la page) n'est pas une sélection
+    const cancel = () => (drag.current = null);
+    window.addEventListener("pointercancel", cancel);
+    return () => window.removeEventListener("pointercancel", cancel);
+  }, []);
+  useEffect(() => {
     const up = () => {
       if (!drag.current) return;
       const d = drag.current;
@@ -724,8 +749,15 @@ export function Reader() {
     [lesson, pages, basePages],
   );
 
+  // dans un livre, la page qui suit la dernière est le début du chapitre suivant
+  const nextChapter = pl && isBook(pl) && lesson ? pl.lessons[pl.lessons.indexOf(lesson.id) + 1] : undefined;
   const goPage = useCallback(
     (p: number) => {
+      if (lesson && nextChapter && p === pages.length) {
+        logRead(creditPage(pageNow.current, false));
+        openLesson(nextChapter, { playlist: pl!.id });
+        return;
+      }
       if (!lesson || p < 0 || p >= pages.length) return;
       // en avançant, la page qu'on quitte est lue
       if (p > pageNow.current) logRead(creditPage(pageNow.current, false));
@@ -737,7 +769,7 @@ export function Reader() {
       keepTok.current = pages[p].start;
       savePage(p);
     },
-    [lesson, pages, logRead, creditPage, savePage],
+    [lesson, pages, logRead, creditPage, savePage, nextChapter, openLesson, pl],
   );
 
   const onPlayerPage = useCallback(
@@ -776,10 +808,76 @@ export function Reader() {
     goPage(pageNow.current + (forward ? 1 : -1));
   };
 
+  // iPhone et iPad : un balayage du doigt tourne la page ; un appui long sur un mot puis
+  // le doigt qui glisse sélectionne une expression (le doigt ne survole pas les mots
+  // comme la souris : le mot sous le doigt se lit à sa position)
+  const touch = useRef<{ x: number; y: number; mode: "" | "swipe" | "select" | "none"; timer: number; before: Range | null; start: number } | null>(null);
+  const onTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1 || lookOpen) {
+      touch.current = null;
+      return;
+    }
+    const p = e.touches[0];
+    const el = (e.target as HTMLElement).closest("[data-i]") as HTMLElement | null;
+    const st = { x: p.clientX, y: p.clientY, mode: "" as const, timer: 0, before: rangeRef.current, start: el ? Number(el.dataset.i) : -1 };
+    touch.current = st;
+    if (st.start >= 0)
+      st.timer = window.setTimeout(() => {
+        if (touch.current !== st || st.mode !== "") return;
+        (st as { mode: string }).mode = "select";
+        // le geste est désormais une sélection, validée à la fin du toucher (pas au relâcher du pointeur)
+        drag.current = null;
+        void api().haptic(0);
+      }, 380);
+  };
+  const onTouchMove = (e: React.TouchEvent) => {
+    const st = touch.current;
+    if (!st) return;
+    const p = e.touches[0];
+    const dx = p.clientX - st.x;
+    const dy = p.clientY - st.y;
+    if (st.mode === "select") {
+      const el = document.elementFromPoint(p.clientX, p.clientY)?.closest("[data-i]") as HTMLElement | null;
+      if (!el) return;
+      const i = Number(el.dataset.i);
+      setRange({ a: Math.min(st.start, i), b: Math.max(st.start, i) });
+      return;
+    }
+    if (st.mode === "" && (Math.abs(dx) > 12 || Math.abs(dy) > 12)) {
+      window.clearTimeout(st.timer);
+      st.mode = Math.abs(dx) > Math.abs(dy) * 1.2 ? "swipe" : "none";
+      // un balayage n'est pas un toucher de mot : la sélection d'avant revient
+      if (st.mode === "swipe" && drag.current) {
+        drag.current = null;
+        setRange(st.before);
+      }
+    }
+  };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    const st = touch.current;
+    touch.current = null;
+    if (!st) return;
+    window.clearTimeout(st.timer);
+    if (st.mode === "select") {
+      const r = rangeRef.current;
+      if (r) select(r.a, r.b);
+      return;
+    }
+    if (st.mode !== "swipe") return;
+    const dx = e.changedTouches[0].clientX - st.x;
+    if (Math.abs(dx) < 40) return;
+    // vers la gauche pour avancer (vers la droite en arabe), comme dans Livres
+    goPage(pageNow.current + ((dx < 0) !== !!langInfo(lang).rtl ? 1 : -1));
+  };
+  const touchProps = isMobile ? { onTouchStart, onTouchMove, onTouchEnd, onTouchCancel: () => (touch.current = null) } : {};
+
   const findNext = async () => {
     if (!lesson) return null;
-    // dans une playlist, la suivante est la sienne ; sinon, celle de la collection
-    if (pl) return pl.lessons[pl.lessons.indexOf(lesson.id) + 1] ?? null;
+    // dans une playlist, la suivante est la sienne (la première, en boucle) ; sinon, celle de la collection
+    if (pl) {
+      const n = nextIn(pl, lesson.id);
+      return n && n !== lesson.id ? n : null;
+    }
     const all = await api().lessonsList(lesson.lang);
     const same = all.filter((l) => l.collection && l.collection === lesson.collection).sort((a, b) => a.created_at - b.created_at || a.id - b.id);
     const idx = same.findIndex((l) => l.id === lesson.id);
@@ -935,6 +1033,10 @@ export function Reader() {
         e.preventDefault();
         setAside("chat");
         useChat.getState().focus();
+      } else if (key === "v" && lesson && (lesson.kind === "video" || !!lesson.video_path)) {
+        // fermer la vidéo, ou la faire revenir
+        e.preventDefault();
+        showVideo(!videoShown);
       } else if (e.key === " ") {
         e.preventDefault();
         playerRef.current?.toggle();
@@ -969,7 +1071,8 @@ export function Reader() {
   const changeCover = async () => {
     if (!lesson) return;
     try {
-      if (await chooseCover(lesson.id)) {
+      // le chapitre d'un livre : la couverture est celle de tout le livre
+      if (await chooseCover(lesson.id, pl && isBook(pl) ? pl.lessons.filter((x) => x !== lesson.id) : undefined)) {
         bump();
         toast(t("Nouvelle couverture enregistrée", "New cover saved"), "light");
       }
@@ -997,7 +1100,7 @@ export function Reader() {
     bump();
     go("library");
   };
-  useLessonMenu(lesson ? { media: !!lesson.media_path, video: !!lesson.video_path, float: floating } : null, {
+  useLessonMenu(lesson ? { media: !!lesson.media_path, video: !!lesson.video_path, float: floating, loop: pl && !isBook(pl) ? pl.looping : null } : null, {
     toggle: () => playerRef.current?.toggle(),
     skip: (secs) => playerRef.current?.skip(secs),
     prev: () => goPage(page - 1),
@@ -1009,11 +1112,16 @@ export function Reader() {
       useChat.getState().focus();
     },
     simplify: () => setSimplify(true),
-    cinema: () => setCinema(true),
+    cinema: () => {
+      showVideo(true);
+      setCinema(true);
+    },
+    video: () => showVideo(!videoShown),
     playlist: () => void addToPlaylist(),
     cover: () => void changeCover(),
     remove: () => void removeLesson(),
     panel: () => togglePanel(),
+    loop: () => pl && void toggleLoop(pl),
   });
 
   // le chat cadre l'extrait des longues leçons sur la page lue
@@ -1230,7 +1338,9 @@ export function Reader() {
           `The ${newOnPage} blue word${newOnPage > 1 ? "s" : ""} you didn't look up will join your known words.`,
         )
       : isLast
-        ? t("Dernière page de la leçon.", "Last page of the lesson.")
+        ? nextChapter
+          ? t("Dernière page du chapitre : la page suivante ouvre le chapitre d'après.", "Last page of the chapter: the next page opens the following one.")
+          : t("Dernière page de la leçon.", "Last page of the lesson.")
         : t("Tous les mots de cette page sont déjà rencontrés.", "You have already met every word on this page.");
   const finishLabel = isLast ? t("Terminer la leçon", "Finish the lesson") : t("Terminer la page", "Finish the page");
 
@@ -1239,7 +1349,7 @@ export function Reader() {
       <div className="reader-crumb">
         {pl ? (
           <>
-            <button onClick={() => openPlaylist(null)}>Playlists</button>
+            {isBook(pl) ? <button onClick={() => go("library")}>{t("Bibliothèque", "Library")}</button> : <button onClick={() => openPlaylist(null)}>Playlists</button>}
             <span>›</span>
             <button onClick={() => openPlaylist(pl.id)}>{pl.name}</button>
           </>
@@ -1356,14 +1466,22 @@ export function Reader() {
   const arrow = (side: "left" | "right") => {
     const forward = (side === "right") === !li.rtl;
     const target = page + (forward ? 1 : -1);
-    const off = target < 0 || target >= pages.length;
+    // dernière page d'un chapitre : la flèche mène au chapitre suivant du livre
+    const chapter = forward && target === pages.length && !!nextChapter;
+    const off = target < 0 || (target >= pages.length && !chapter);
     return (
       <button
         className={`leaf-arrow ${side} ${off ? "off" : ""}`}
         onClick={() => goPage(target)}
         disabled={off}
-        aria-label={forward ? t("Page suivante", "Next page") : t("Page précédente", "Previous page")}
-        title={forward ? t("Page suivante (sans marquer les mots)", "Next page (without marking words)") : t("Page précédente", "Previous page")}
+        aria-label={chapter ? t("Chapitre suivant", "Next chapter") : forward ? t("Page suivante", "Next page") : t("Page précédente", "Previous page")}
+        title={
+          chapter
+            ? t("Chapitre suivant (sans marquer les mots)", "Next chapter (without marking words)")
+            : forward
+              ? t("Page suivante (sans marquer les mots)", "Next page (without marking words)")
+              : t("Page précédente", "Previous page")
+        }
       >
         <span className="leaf-arrow-glow" />
         <Icon name={side} size={30} stroke={1.5} />
@@ -1377,7 +1495,7 @@ export function Reader() {
         <div className="reader-top drag" data-tauri-drag-region>
           {!cinema && (
             <button
-              className="icon-btn no-drag"
+              className="icon-btn no-drag reader-side-toggle"
               onClick={() => setSetting("reader_sidebar", sideHidden ? "1" : "0")}
               aria-label={sideHidden ? t("Afficher la barre latérale", "Show the sidebar") : t("Masquer la barre latérale", "Hide the sidebar")}
               title={sideHidden ? t("Afficher la barre latérale", "Show the sidebar") : t("Masquer la barre latérale pour lire plus au large", "Hide the sidebar to read with more room")}
@@ -1387,9 +1505,10 @@ export function Reader() {
           )}
           <button
             className="icon-btn no-drag"
-            onClick={() => (pl ? openPlaylist(pl.id) : go("library"))}
-            aria-label={pl ? t("Retour à la playlist", "Back to the playlist") : t("Retour à la bibliothèque", "Back to the library")}
-            title={pl ? t(`Retour à « ${pl.name} »`, `Back to “${pl.name}”`) : undefined}
+            // un livre se range dans la bibliothèque, une playlist parmi les playlists
+            onClick={() => (pl && !isBook(pl) ? openPlaylist(pl.id) : go("library"))}
+            aria-label={pl && !isBook(pl) ? t("Retour à la playlist", "Back to the playlist") : t("Retour à la bibliothèque", "Back to the library")}
+            title={pl && !isBook(pl) ? t(`Retour à « ${pl.name} »`, `Back to “${pl.name}”`) : undefined}
           >
             <Icon name="back" size={18} />
           </button>
@@ -1402,6 +1521,23 @@ export function Reader() {
               {lesson.title}
             </span>
           )}
+          {/* vidéo fermée : elle revient d'un clic */}
+          <AnimatePresence initial={false}>
+            {isVideo && !videoShown && !cinema && (
+              <motion.span
+                key="video-back"
+                className="video-back no-drag"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.14 } }}
+                transition={{ type: "spring", stiffness: 420, damping: 30 }}
+              >
+                <button className="btn sm soft" onClick={() => showVideo(true)} aria-label={t("Afficher la vidéo", "Show the video")} title={t("Afficher la vidéo (V)", "Show the video (V)")}>
+                  <Icon name="video" size={14} /> {t("Vidéo", "Video")}
+                </button>
+              </motion.span>
+            )}
+          </AnimatePresence>
           {!cinema && (
             <div className="look-anchor no-drag">
               <button
@@ -1469,11 +1605,13 @@ export function Reader() {
             onVideoReady={(path) => setData((d) => (d ? { ...d, lesson: { ...d.lesson, video_path: path } } : d))}
             cinema={cinema}
             setCinema={setCinema}
+            hidden={!videoShown && !cinema}
+            onClose={() => showVideo(false)}
           />
         )}
 
         {paged ? (
-          <div className="reader-leaves" onWheel={onSwipe} onPointerDown={onVoidDown}>
+          <div className="reader-leaves" onWheel={onSwipe} onPointerDown={onVoidDown} {...touchProps}>
             {arrow("left")}
             <div className="leaf">
               <div className="leaf-view" ref={viewRef}>
@@ -1526,7 +1664,7 @@ export function Reader() {
             {arrow("right")}
           </div>
         ) : (
-          <div className="reader-scroll" ref={scrollRef} onScroll={onReaderScroll} onPointerDown={onVoidDown}>
+          <div className="reader-scroll" ref={scrollRef} onScroll={onReaderScroll} onPointerDown={onVoidDown} {...touchProps}>
             <div className="reader-inner">
               {header}
 
@@ -1545,7 +1683,12 @@ export function Reader() {
                     <span className="num">
                       {page + 1} / {pages.length}
                     </span>
-                    <button className="icon-btn" onClick={() => goPage(page + 1)} disabled={isLast} aria-label={t("Page suivante sans marquer", "Next page without marking")}>
+                    <button
+                      className="icon-btn"
+                      onClick={() => goPage(page + 1)}
+                      disabled={isLast && !nextChapter}
+                      aria-label={isLast ? t("Chapitre suivant sans marquer", "Next chapter without marking") : t("Page suivante sans marquer", "Next page without marking")}
+                    >
                       <Icon name="right" />
                     </button>
                   </div>
@@ -1571,6 +1714,7 @@ export function Reader() {
           onPage={onPlayerPage}
           onCursor={setCursor}
           videoHost={videoHost}
+          videoOff={isVideo && !videoShown && !cinema}
           onState={onPlayback}
           onResynced={(r) => (r.text ? retext(lesson.id) : setData((d) => (d ? { ...d, lesson: { ...d.lesson, timings: r.timings, timing_v: 2 } } : d)))}
           onVoiced={(v) => setData((d) => (d ? { ...d, lesson: { ...d.lesson, ...v, position: 0 } } : d))}
@@ -1686,7 +1830,7 @@ export function Reader() {
                   </button>
                   {complete.next ? (
                     <button className="btn primary lg glow" onClick={() => openLesson(complete.next!, pl ? { playlist: pl.id } : undefined)}>
-                      {t("Leçon suivante", "Next lesson")} <Icon name="forward" size={16} />
+                      {pl && isBook(pl) ? t("Chapitre suivant", "Next chapter") : t("Leçon suivante", "Next lesson")} <Icon name="forward" size={16} />
                     </button>
                   ) : (
                     <button

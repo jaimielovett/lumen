@@ -181,6 +181,12 @@ pub async fn lesson_update(state: State<'_, AppState>, id: i64, patch: LessonPat
     db::lesson_update(&state.db.lock(), id, &patch).map_err(err)
 }
 
+/// Marque des leçons lues ou non lues d'un coup (playlist entière, sélection).
+#[tauri::command]
+pub async fn lessons_set_completed(state: State<'_, AppState>, ids: Vec<i64>, completed: bool) -> R<()> {
+    db::lessons_set_completed(&mut state.db.lock(), &ids, completed).map_err(err)
+}
+
 #[tauri::command]
 pub async fn lesson_delete(state: State<'_, AppState>, id: i64) -> R<()> {
     lessons_delete(state, vec![id]).await
@@ -200,32 +206,101 @@ pub async fn lessons_delete(state: State<'_, AppState>, ids: Vec<i64>) -> R<()> 
     Ok(())
 }
 
+/// Écrit une image de couverture (déjà réduite par l'interface) dans `media/`.
+fn save_cover(data_dir: &std::path::Path, bytes: &[u8], ext: Option<String>) -> R<String> {
+    if bytes.len() > 30_000_000 {
+        return Err(t("Cette image est trop lourde (30 Mo au plus).", "This image is too large (30 MB at most).").into());
+    }
+    let ext = ext.unwrap_or_default().to_lowercase();
+    let ext = if ["jpg", "jpeg", "png", "webp", "gif", "heic", "avif"].contains(&ext.as_str()) { ext } else { "jpg".into() };
+    let media = media::media_dir(data_dir);
+    std::fs::create_dir_all(&media).map_err(err)?;
+    let p = media.join(format!("{}.cover.{ext}", media::new_stem()));
+    std::fs::write(&p, bytes).map_err(|e| tr!("Image impossible à enregistrer : {e}", "Couldn't save the image: {e}"))?;
+    Ok(p.display().to_string())
+}
+
 /// Enregistre l'image de couverture choisie (déjà réduite par l'interface),
-/// ou la retire si `data` est vide. Renvoie le chemin de la nouvelle image.
+/// ou la retire si `data` est vide. `also` : autres leçons qui prennent la même
+/// image (les chapitres d'un livre). Renvoie le chemin de la nouvelle image.
 #[tauri::command]
-pub async fn lesson_set_cover(state: State<'_, AppState>, id: i64, data: Option<Vec<u8>>, ext: Option<String>) -> R<Option<String>> {
-    let media = media::media_dir(&state.data_dir);
+pub async fn lesson_set_cover(state: State<'_, AppState>, id: i64, data: Option<Vec<u8>>, ext: Option<String>, also: Option<Vec<i64>>) -> R<Option<String>> {
     let new_path = match data {
-        Some(bytes) if !bytes.is_empty() => {
-            if bytes.len() > 30_000_000 {
-                return Err(t("Cette image est trop lourde (30 Mo au plus).", "This image is too large (30 MB at most).").into());
-            }
-            let ext = ext.unwrap_or_default().to_lowercase();
-            let ext = if ["jpg", "jpeg", "png", "webp", "gif", "heic", "avif"].contains(&ext.as_str()) { ext } else { "jpg".into() };
-            std::fs::create_dir_all(&media).map_err(err)?;
-            let p = media.join(format!("{}.cover.{ext}", media::new_stem()));
-            std::fs::write(&p, bytes).map_err(|e| tr!("Image impossible à enregistrer : {e}", "Couldn't save the image: {e}"))?;
-            Some(p.display().to_string())
-        }
+        Some(bytes) if !bytes.is_empty() => Some(save_cover(&state.data_dir, &bytes, ext)?),
         _ => None,
     };
-    let old = db::lesson_set_cover(&state.db.lock(), id, new_path.as_deref()).map_err(err)?;
-    if let Some(old) = old.map(PathBuf::from) {
-        if old.starts_with(&media) {
-            let _ = std::fs::remove_file(old);
+    put_cover(&state, std::iter::once(id).chain(also.unwrap_or_default()), new_path.as_deref())?;
+    Ok(new_path)
+}
+
+/// Donne la couverture `path` (ou aucune) aux leçons `ids`, et supprime les anciennes
+/// images que plus aucune leçon ne cite.
+fn put_cover(state: &AppState, ids: impl IntoIterator<Item = i64>, path: Option<&str>) -> R<()> {
+    let media = media::media_dir(&state.data_dir);
+    let conn = state.db.lock();
+    let mut old = Vec::new();
+    for l in ids {
+        old.extend(db::lesson_set_cover(&conn, l, path).map_err(err)?);
+    }
+    old.sort();
+    old.dedup();
+    // l'ancienne image peut rester la couverture d'un autre chapitre du livre
+    for o in old.into_iter().filter(|o| !db::file_used(&conn, o)).map(PathBuf::from) {
+        if o.starts_with(&media) {
+            let _ = std::fs::remove_file(o);
         }
     }
-    Ok(new_path)
+    Ok(())
+}
+
+/// Télécharge l'image d'un article (celle de Découvrir ou de la recherche, sinon celle
+/// que la page annonce) et en fait la couverture de la leçon et de ses parties (`also`),
+/// réduite comme les autres. Rien si l'image ne se télécharge pas.
+#[tauri::command]
+pub async fn lesson_cover_fetch(state: State<'_, AppState>, id: i64, url: String, also: Option<Vec<i64>>) -> R<Option<String>> {
+    let url = url.trim();
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        return Ok(None);
+    }
+    let Some(p) = link::fetch_cover(&state.data_dir, url).await else { return Ok(None) };
+    let path = p.display().to_string();
+    put_cover(&state, std::iter::once(id).chain(also.unwrap_or_default()), Some(&path))?;
+    Ok(Some(path))
+}
+
+/// Les leçons d'une langue telles que Découvrir et la recherche les reconnaissent
+/// (même page, même vidéo, même chanson) : « Dans la bibliothèque ».
+#[tauri::command]
+pub async fn lesson_links(state: State<'_, AppState>, lang: String) -> R<Vec<db::LessonLink>> {
+    db::lesson_links(&state.db.lock(), &lang).map_err(err)
+}
+
+#[derive(Serialize)]
+pub struct CreatedBook {
+    /// playlist du livre
+    playlist: i64,
+    /// chapitres, dans l'ordre du livre
+    lessons: Vec<i64>,
+}
+
+/// Crée un livre : ses chapitres et sa playlist d'un seul geste, la couverture
+/// (déjà réduite par l'interface) écrite une fois et partagée par les chapitres.
+#[tauri::command]
+pub async fn book_create(state: State<'_, AppState>, book: db::NewBook, cover: Option<Vec<u8>>) -> R<CreatedBook> {
+    let cover = match cover {
+        Some(bytes) if !bytes.is_empty() => save_cover(&state.data_dir, &bytes, Some("jpg".into())).ok(),
+        _ => None,
+    };
+    let made = db::book_create(&mut state.db.lock(), &book, cover.as_deref());
+    match made {
+        Ok((playlist, lessons)) => Ok(CreatedBook { playlist, lessons }),
+        Err(e) => {
+            if let Some(c) = cover {
+                let _ = std::fs::remove_file(c);
+            }
+            Err(err(e))
+        }
+    }
 }
 
 // ---------- playlists ----------
@@ -472,14 +547,16 @@ pub async fn ai_sentence(
     let native = i18n::native();
     let version = if native == "en" { "s1en" } else { "s1" };
     let key_of = |b: &Brain| hash(&[version, &b.id(), &lang, sentence.trim()]);
-    if let Some(v) = db::cache_get(&state.db.lock(), &key_of(&brain)) {
+    // une phrase recopiée telle quelle (petit modèle) n'est pas une traduction : ni relue ni gardée
+    let echo = |v: &str| v.trim() == sentence.trim();
+    if let Some(v) = db::cache_get(&state.db.lock(), &key_of(&brain)).filter(|v| !echo(v)) {
         return Ok(v);
     }
     let epoch = state.ai.next_epoch();
     let messages = ai::sentence_messages(native, &lang, &sentence);
     let (out, by) = translate(state.inner(), brain, &messages, 260, epoch, &on_event).await?;
     let out = out.trim().trim_matches(['«', '»', '"']).trim().to_string();
-    if !out.is_empty() {
+    if !out.is_empty() && !echo(&out) {
         db::cache_put(&state.db.lock(), &key_of(&by), &out);
     }
     Ok(out)
@@ -819,8 +896,9 @@ pub async fn model_delete(state: State<'_, AppState>, id: String) -> R<()> {
     } else if p.exists() {
         std::fs::remove_file(&p).map_err(err)?;
     }
-    if m.kind == "tts" {
-        crate::voice::remove_engine(&state.data_dir);
+    // le moteur sherpa-onnx part avec le dernier modèle qui s'en sert (voix, Parakeet)
+    if m.engine.is_some() && !models::CATALOG.iter().any(|o| o.engine.is_some() && models::path_of(&state.data_dir, o).exists()) {
+        crate::sherpa::remove(&state.data_dir);
     }
     Ok(())
 }
@@ -947,15 +1025,30 @@ pub async fn read_file(path: String) -> R<Response> {
     Ok(Response::new(bytes))
 }
 
-/// Qwen3-ASR (modèle et partie audio), s'il est installé et connaît la langue.
-fn text_model(state: &AppState, lang: &str) -> Option<(PathBuf, PathBuf)> {
-    crate::asr::language_name(lang)?;
-    let m = models::CATALOG.iter().find(|m| m.kind == "asrtext" && models::installed(&state.data_dir, m))?;
-    Some((models::path_of(&state.data_dir, m), models::companion_path(&state.data_dir, m)?))
+/// Qui écrit le texte d'une transcription dans cette langue : Qwen3-ASR ou
+/// Parakeet, installé et qui y fait au moins aussi bien que Whisper seul
+/// (`asr::writes`, `parakeet::knows`) ; les deux, celui qui y fait le mieux
+/// (`parakeet::before_qwen`). Aucun : Whisper écrit seul. Miroir : `lib/writers.ts`.
+fn text_model(state: &AppState, lang: &str) -> Option<media::Writer> {
+    let dir = &state.data_dir;
+    let ready = |m: &&models::ModelInfo| models::installed(dir, m);
+    let qwen = crate::asr::writes(lang)
+        .then(|| models::CATALOG.iter().filter(|m| m.kind == "asrtext" && m.engine.is_none()).find(ready))
+        .flatten()
+        .and_then(|m| Some(media::Writer::Qwen { model: models::path_of(dir, m), mmproj: models::companion_path(dir, m)? }));
+    let parakeet = crate::parakeet::knows(lang)
+        .then(|| models::CATALOG.iter().filter(|m| m.engine == Some(crate::sherpa::Tool::Asr)).find(ready))
+        .flatten()
+        .map(|m| media::Writer::Parakeet { data_dir: dir.clone(), model: models::path_of(dir, m) });
+    if crate::parakeet::before_qwen(lang) {
+        parakeet.or(qwen)
+    } else {
+        qwen.or(parakeet)
+    }
 }
 
-/// Transcrit un son pour en faire une leçon (Whisper, et Qwen3-ASR s'il est
-/// installé et connaît la langue) : voir `media::lesson_transcript`.
+/// Transcrit un son pour en faire une leçon (Whisper, et Qwen3-ASR ou Parakeet
+/// s'il est installé et convient à la langue) : voir `media::lesson_transcript`.
 async fn transcribe_media(
     state: &AppState,
     media: &std::path::Path,
@@ -1381,7 +1474,7 @@ pub async fn media_usage(state: State<'_, AppState>) -> R<MediaUsage> {
             candidates: 0,
             candidate_bytes: 0,
             candidate_after: 0,
-            supported: cfg!(target_os = "macos"),
+            supported: cfg!(any(target_os = "macos", target_os = "ios")),
         };
         for compress::LessonFile { path, role, .. } in &files {
             let p = std::path::Path::new(path);
@@ -1442,6 +1535,61 @@ pub async fn media_lighten(state: State<'_, AppState>, on_event: Channel<compres
 #[tauri::command]
 pub async fn online_check(provider: String, key: String, url: Option<String>, model: Option<String>) -> R<online::Check> {
     online::check(&provider, &key, url.as_deref().unwrap_or(""), model.as_deref().unwrap_or("")).await.map_err(err)
+}
+
+// ---------- Sign in with ChatGPT ----------
+
+/// Connexion à ChatGPT de cet appareil : compte, droit d'utiliser le forfait, demandes du jour.
+#[tauri::command]
+pub fn chatgpt_status() -> crate::chatgpt::Status {
+    crate::chatgpt::status()
+}
+
+/// Connexion dans le navigateur du système ; attend son retour (dix minutes au
+/// plus). Annulable avec `model_cancel("chatgpt")`.
+#[tauri::command]
+pub async fn chatgpt_sign_in(app: tauri::AppHandle, state: State<'_, AppState>) -> R<crate::chatgpt::Status> {
+    #[cfg(not(target_os = "ios"))]
+    use tauri_plugin_opener::OpenerExt;
+    let cancel = Arc::new(AtomicBool::new(false));
+    state.downloads.lock().insert("chatgpt".into(), cancel.clone());
+    #[cfg(not(target_os = "ios"))]
+    let open = |url: &str| app.opener().open_url(url, None::<&str>).map_err(|e| anyhow::anyhow!(e.to_string()));
+    // iPhone et iPad : la page de connexion s'ouvre dans Lumen, qui reste au premier
+    // plan (dans Safari, iOS endormirait l'adresse locale qui attend la réponse) ;
+    // la fermer annule la connexion
+    #[cfg(target_os = "ios")]
+    let (_, stop) = (&app, cancel.clone());
+    #[cfg(target_os = "ios")]
+    let open = move |url: &str| {
+        if crate::ios::web_open(url, stop) {
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!(t("La page de connexion n'a pas pu s'ouvrir.", "The sign-in page couldn't open.")))
+        }
+    };
+    // retour du navigateur : Lumen repasse devant (Windows le permet ; macOS, depuis
+    // la version 14, peut laisser le navigateur devant, sa page dit alors de revenir)
+    let back = || {
+        #[cfg(target_os = "ios")]
+        crate::ios::web_close();
+        #[cfg(desktop)]
+        {
+            use tauri::Manager;
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.set_focus();
+            }
+        }
+    };
+    let out = crate::chatgpt::sign_in(open, back, cancel).await;
+    state.downloads.lock().remove("chatgpt");
+    out.map_err(err)
+}
+
+#[tauri::command]
+pub async fn chatgpt_sign_out() -> R<crate::chatgpt::Status> {
+    crate::chatgpt::sign_out().await.map_err(err)
 }
 
 // ---------- podcasts sur mesure (Gemini) ----------
@@ -1605,6 +1753,54 @@ pub async fn backup_places() -> R<Vec<backup::Place>> {
 #[tauri::command]
 pub async fn backup_place_dir(path: String) -> R<String> {
     tokio::task::block_in_place(|| backup::place_dir(&path))
+}
+
+/// Synchronise maintenant : fusionne les sauvegardes des autres appareils de la même
+/// personne qui ont changé (aussi diffusé par l'événement « synced »). `null` : rien de nouveau.
+#[tauri::command]
+pub async fn backup_sync(app: tauri::AppHandle, state: State<'_, AppState>) -> R<Option<backup::Synced>> {
+    let st = state.inner();
+    let out = tokio::task::block_in_place(|| backup::sync_now(st))?;
+    if let Some(done) = out.as_ref().filter(|d| !d.report.is_empty()) {
+        let _ = app.emit("synced", done);
+    }
+    Ok(out)
+}
+
+/// Ajoute la progression d'une sauvegarde (un autre appareil) à celle de cet appareil, sans la remplacer.
+#[tauri::command]
+pub async fn backup_merge(state: State<'_, AppState>, key: String) -> R<crate::sync::Report> {
+    let st = state.inner();
+    tokio::task::block_in_place(|| backup::merge_for(st, &key))
+}
+
+/// iPhone et iPad : choisir dans l'app Fichiers le dossier de la sauvegarde (le dossier
+/// « Lumen » d'iCloud Drive, où le Mac sauvegarde). Renvoie son chemin ; rien si
+/// l'apprenant renonce. Ailleurs, l'emplacement se choisit autrement (`backup_places`).
+#[tauri::command]
+pub async fn backup_pick_folder(state: State<'_, AppState>) -> R<Option<String>> {
+    #[cfg(target_os = "ios")]
+    return backup::pick_place(state.inner()).await;
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = state;
+        Err(crate::i18n::t("Seulement sur iPhone et iPad.", "Only on iPhone and iPad.").into())
+    }
+}
+
+/// L'appareil (modèle, mémoire, chaleur) : le modèle d'IA recommandé en dépend sur iPhone et iPad.
+#[tauri::command]
+pub fn device_info() -> crate::proc::DeviceInfo {
+    crate::proc::device_info()
+}
+
+/// Retour haptique (iPhone et iPad) : 0 sélection, 1 léger, 2 moyen, 3 réussite.
+#[tauri::command]
+pub fn haptic(kind: i32) {
+    #[cfg(target_os = "ios")]
+    crate::ios::haptic(kind);
+    #[cfg(not(target_os = "ios"))]
+    let _ = kind;
 }
 
 /// Remplace la progression de ce Mac par une sauvegarde (`day` : version d'un jour précédent).

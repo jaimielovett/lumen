@@ -22,6 +22,8 @@ export interface PlayerHandle {
   skip(secs: number): void;
   /** oublie la position mémorisée (leçon terminée : la prochaine lecture repart du début) */
   forget(): void;
+  /** repart du tout début et lit (playlist d'une seule leçon, en boucle) */
+  restart(): void;
 }
 
 export interface PlaybackState {
@@ -39,6 +41,8 @@ interface Props {
   onCursor(i: number): void;
   /** emplacement (dans la scène vidéo) où afficher l'image */
   videoHost?: HTMLElement | null;
+  /** vidéo fermée par l'apprenant : une image à part (son séparé) s'arrête, le son continue */
+  videoOff?: boolean;
   onState?(s: PlaybackState): void;
   /** nouveaux horodatages après un recalage de la lanterne */
   /** lanterne recalée ; `text` : le texte a été reponctué */
@@ -169,7 +173,7 @@ export function lastLE(n: number, get: (i: number) => number, x: number): number
   return ans;
 }
 
-export const Player = forwardRef<PlayerHandle, Props>(function Player({ lesson, tokens, pages, page, onPage, onCursor, videoHost, onState, onResynced, onVoiced, autoplay, onFinished }, ref) {
+export const Player = forwardRef<PlayerHandle, Props>(function Player({ lesson, tokens, pages, page, onPage, onCursor, videoHost, videoOff, onState, onResynced, onVoiced, autoplay, onFinished }, ref) {
   const settings = useApp((s) => s.settings);
   const setSetting = useApp((s) => s.setSetting);
   const hasMedia = !!lesson.media_path;
@@ -181,6 +185,21 @@ export const Player = forwardRef<PlayerHandle, Props>(function Player({ lesson, 
   const audioRef = useRef<HTMLAudioElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const master = (): HTMLMediaElement | null => (single ? videoRef.current : audioRef.current);
+  // image seule et fermée : elle ne suit plus le son (une vidéo qui porte le son, elle, continue)
+  const idle = dual && !!videoOff;
+  const idleRef = useRef(idle);
+  idleRef.current = idle;
+  useEffect(() => {
+    const v = videoRef.current;
+    const a = audioRef.current;
+    if (!dual || !v) return;
+    if (idle) v.pause();
+    else if (a) {
+      // rouverte : l'image rejoint le son là où il en est
+      if (v.readyState >= 1) v.currentTime = a.currentTime;
+      if (!a.paused) void v.play().catch(() => {});
+    }
+  }, [idle, dual]);
 
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
@@ -329,7 +348,7 @@ export const Player = forwardRef<PlayerHandle, Props>(function Player({ lesson, 
         }
         // l'image suit le son : petite correction de vitesse, ou saut si l'écart est grand
         const v = videoRef.current;
-        if (dual && v && v.readyState >= 2) {
+        if (dual && v && !idleRef.current && v.readyState >= 2) {
           const d = v.currentTime - t;
           if (Math.abs(d) > 0.35) {
             v.currentTime = t;
@@ -452,7 +471,8 @@ export const Player = forwardRef<PlayerHandle, Props>(function Player({ lesson, 
 
   const seekToToken = useCallback(
     (i: number) => {
-      if (!timing) return;
+      // aucun mot minuté (chanson sans paroles minutées) : rien où sauter
+      if (!timing || !timing.raw.length) return;
       const k = timing.tokIdx.findIndex((t) => t >= i);
       const idx = k === -1 ? timing.tokIdx.length - 1 : k;
       seekTo(timing.raw[idx][2] - 0.05);
@@ -466,7 +486,7 @@ export const Player = forwardRef<PlayerHandle, Props>(function Player({ lesson, 
     if (!m) return;
     // refus possible (lecture sans geste de l'utilisateur) : le lecteur reste simplement en pause
     void m.play().catch(() => {});
-    if (dual) void videoRef.current?.play().catch(() => {});
+    if (dual && !idleRef.current) void videoRef.current?.play().catch(() => {});
   };
   const pauseMedia = () => {
     master()?.pause();
@@ -564,6 +584,12 @@ export const Player = forwardRef<PlayerHandle, Props>(function Player({ lesson, 
         posRef.current = 0;
         savedPos.current = 0;
         resumeRef.current = -1;
+      },
+      restart() {
+        if (hasMedia) {
+          seekTo(0);
+          playMedia();
+        } else speakFrom(0);
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -65,7 +65,8 @@ if (cmd === "bump") {
     const d = new Date();
     const day = rest[0] ?? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error("Date invalide (attendu : AAAA-MM-JJ).");
-    const next = text.replace(/"version":\s*"next",(\s*)"date":\s*"[^"]*"/, `"version": "${version}",$1"date": "${day}"`);
+    // la date est ajoutée si la version "next" n'en a pas encore
+    const next = text.replace(/"version":\s*"next",(\s*)(?:"date":\s*"[^"]*",\s*)?/, (_, sp) => `"version": "${version}",${sp}"date": "${day}",${sp}`);
     if (next !== text) {
       writeFileSync(CHANGELOG, next);
       console.log(`  ok : nouveautés datées (${version}, ${day})`);

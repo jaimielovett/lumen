@@ -2,6 +2,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Avatar } from "../components/Avatar";
 import { Icon, type IconName } from "../components/Icon";
+import { useCompact } from "../components/MobileNav";
 import { sampleFor, splitWords } from "../components/Guide";
 import { Orb, Segmented, Switch } from "../components/ui";
 import { api, errorText, isTauri } from "../lib/api";
@@ -13,8 +14,8 @@ import { LANGS, STARTERS, inLang, langInfo, langLower, starterCollection, theLan
 import { useDictStatus } from "../lib/dicts";
 import { LEVELS, levelName, openSource, unitsLabel, useLevel } from "../lib/discover";
 import { useLingq } from "../lib/lingq";
-import { isWindows } from "../lib/platform";
-import { PROFILES } from "../lib/profiles";
+import { isIOS, isWindows } from "../lib/platform";
+import { PROFILES, useRecommendedProfile } from "../lib/profiles";
 import { formatBytes, useApp, type SettingsTab } from "../lib/store";
 import { naturalVoiceFor, naturalVoices, pronounce } from "../lib/pronounce";
 import { loadVoices, sayWord, voicesFor } from "../lib/tts";
@@ -30,6 +31,7 @@ import { useOnline } from "../lib/online";
 import { PodcastSection } from "./PodcastSection";
 import { ProfileSection } from "./ProfileSection";
 import { useUser } from "../lib/user";
+import { shortName, writerFor } from "../lib/writers";
 
 /* Réglages : un menu de catégories à gauche, une page par catégorie à droite.
    Chaque page ne montre que son domaine ; la recherche du menu retrouve un réglage. */
@@ -73,7 +75,7 @@ const groups = (): { title: string | null; tabs: Tab[] }[] => [
         icon: "settings",
         label: t("Général", "General"),
         lead: t("La langue de Lumen et sa lumière, de l'aube à la nuit.", "Lumen's language and its light, from dawn to night."),
-        keys: "langue interface francais anglais theme apparence clair sombre systeme language french english appearance light dark system",
+        keys: "langue interface francais anglais theme apparence clair sombre systeme bibliotheque presentation cartes grandes petites liste finder tri language french english appearance light dark system library view cards large small list sort",
       },
     ],
   },
@@ -150,11 +152,13 @@ const groups = (): { title: string | null; tabs: Tab[] }[] => [
         id: "videos",
         icon: "video",
         label: t("Vidéos en ligne", "Online videos"),
-        lead: t(
-          "YouTube et la plupart des sites vidéo : le son est transcrit sur votre Mac et l'image téléchargée en haute définition.",
-          "YouTube and most video sites: the sound is transcribed on your Mac and the picture downloaded in high definition.",
-        ),
-        keys: "videos en ligne youtube navigateur cookies yt-dlp composants online videos browser components",
+        lead: isIOS
+          ? t("YouTube et Dailymotion : le son est transcrit sur votre Mac et l'image téléchargée en haute définition.", "YouTube and Dailymotion: the sound is transcribed on your Mac and the picture downloaded in high definition.")
+          : t(
+              "YouTube et la plupart des sites vidéo : le son est transcrit sur votre Mac et l'image téléchargée en haute définition.",
+              "YouTube and most video sites: the sound is transcribed on your Mac and the picture downloaded in high definition.",
+            ),
+        keys: "videos en ligne youtube dailymotion navigateur cookies yt-dlp composants online videos browser components",
       },
     ],
   },
@@ -169,7 +173,7 @@ const groups = (): { title: string | null; tabs: Tab[] }[] => [
           "Une copie de votre progression dans votre iCloud Drive, votre Dropbox, Google Drive ou OneDrive : mots, expressions, leçons, playlists, conversations et réglages. Si ce Mac est effacé ou remplacé, vous la retrouvez en un clic. Elle ne passe par aucun serveur de Lumen : seul votre compte la reçoit.",
           "A copy of your progress in your iCloud Drive, Dropbox, Google Drive or OneDrive: words, phrases, lessons, playlists, conversations and settings. If this Mac is wiped or replaced, you get it back in one click. It goes through no Lumen server: only your account receives it.",
         ),
-        keys: "sauvegarde icloud drive dropbox google drive onedrive box proton pcloud nextcloud nuage cloud dossier cle usb disque emplacement restaurer historique audio videos backup folder usb disk location restore history",
+        keys: "sauvegarde icloud drive dropbox google drive onedrive box proton pcloud nextcloud nuage cloud dossier cle usb disque emplacement restaurer historique audio videos synchroniser synchronisation fusionner appareils iphone ipad mac backup folder usb disk location restore history sync merge devices",
       },
       {
         id: "storage",
@@ -264,6 +268,9 @@ export function Settings() {
   const tab = useApp((s) => s.settingsTab);
   const online = useApp((s) => s.settings.online_on === "1");
   const openSettings = useApp((s) => s.openSettings);
+  // iPhone : la liste des catégories, puis la page choisie (« ‹ Réglages » y ramène)
+  const compact = useCompact();
+  const paneOpen = useApp((s) => s.settingsPane);
   const still = !!useReducedMotion();
   const [query, setQuery] = useState("");
   const mainRef = useRef<HTMLDivElement>(null);
@@ -275,15 +282,17 @@ export function Settings() {
   const found = query.trim() ? tabs.filter((x) => matches(x, query)) : tabs;
 
   const pick = (id: SettingsTab) => {
-    if (id !== tab) openSettings(id);
+    if (id !== tab || (compact && !paneOpen)) openSettings(id);
   };
 
   // la recherche ouvre d'elle-même la première page trouvée
   const first = found[0]?.id;
   const shown = found.some((x) => x.id === tab);
   useEffect(() => {
+    // sur iPhone, la liste trouvée reste sous les yeux : on touche la page voulue
+    if (compact) return;
     if (query.trim() && first && !shown) openSettings(first);
-  }, [query, first, shown, openSettings]);
+  }, [query, first, shown, openSettings, compact]);
 
   // ↑ ↓ dans le menu : page précédente ou suivante (parmi celles trouvées)
   const onNavKey = (e: React.KeyboardEvent) => {
@@ -300,7 +309,7 @@ export function Settings() {
   return (
     <>
       <div className="titlebar drag" data-tauri-drag-region />
-      <div className="settings-shell">
+      <div className={`settings-shell ${compact ? (paneOpen ? "m-pane" : "m-list") : ""}`}>
         <nav className="set-nav" ref={navRef} aria-label={t("Catégories des réglages", "Settings categories")} onKeyDown={onNavKey}>
           <h1 className="set-nav-title">{t("Réglages", "Settings")}</h1>
           <label className="set-search">
@@ -383,6 +392,11 @@ export function Settings() {
               exit={still ? { opacity: 0 } : { opacity: 0, y: -6, filter: "blur(4px)" }}
               transition={{ duration: 0.26, ease: EASE }}
             >
+              {compact && (
+                <button className="set-back" onClick={() => useApp.setState({ settingsPane: false })}>
+                  <Icon name="back" size={18} /> {t("Réglages", "Settings")}
+                </button>
+              )}
               <header className="set-pane-head">
                 <motion.span
                   className="set-pane-icon"
@@ -492,6 +506,32 @@ function GeneralPane() {
         note={t("« Système » suit le Mac : l'aube le jour, une nuit chaude le soir.", "“System” follows your Mac: dawn by day, a warm night in the evening.")}
       >
         <ThemePicker value={settings.theme || "system"} onChange={(v) => void setSetting("theme", v)} />
+      </Section>
+      <Section
+        title={t("Bibliothèque", "Library")}
+        note={t(
+          "Grandes cartes avec un extrait, petites cartes pour en voir davantage, ou une liste comme dans le Finder, triée d'un clic sur le titre d'une colonne.",
+          "Large cards with an excerpt, small cards to see more at once, or a list like in Finder, sorted with a click on a column title.",
+        )}
+      >
+        <div className="set-card">
+          <div className="set-row">
+            <div className="grow">
+              <strong>{t("Présentation", "View")}</strong>
+            </div>
+            <Segmented
+              id="set-lib-view"
+              label={t("Présentation de la bibliothèque", "Library view")}
+              value={settings.library_view || "large"}
+              onChange={(v) => void setSetting("library_view", v)}
+              options={[
+                { value: "large", label: t("Grandes cartes", "Large cards") },
+                { value: "small", label: t("Petites cartes", "Small cards") },
+                { value: "list", label: t("Liste", "List") },
+              ]}
+            />
+          </div>
+        </div>
       </Section>
     </>
   );
@@ -740,7 +780,7 @@ function ReadingPane() {
               ]}
             />
           </div>
-          <div className="set-row">
+          <div className="set-row panel-choice">
             <div className="grow">
               <strong>{t("Panneau du mot", "Word panel")}</strong>
               <span>
@@ -1147,6 +1187,9 @@ function AiPane() {
   const setSetting = useApp((s) => s.setSetting);
   const models = useApp((s) => s.models);
   const download = useApp((s) => s.download);
+  const lang = settings.lang;
+  // Qwen3-ASR ou Parakeet : celui qui écrit le texte dans la langue étudiée
+  const writer = writerFor(models, lang);
 
   const pickProfile = (id: string) => {
     const p = PROFILES.find((x) => x.id === id)!;
@@ -1156,6 +1199,7 @@ function AiPane() {
     if (m && !m.installed) void download(p.llm);
   };
   const activeProfile = PROFILES.find((p) => p.llm === settings.llm_model)?.id;
+  const advised = useRecommendedProfile();
   const lines = (kind: ModelRow["kind"]) => models.filter((m) => m.kind === kind).map((m) => <ModelLine key={m.id} m={m} />);
 
   return (
@@ -1200,7 +1244,10 @@ function AiPane() {
               </span>
               <strong>{p.name}</strong>
               <span>{p.desc}</span>
-              <span className="size">{formatBytes(p.size)}</span>
+              <span className="size">
+                {formatBytes(p.size)}
+                {isIOS && p.id === advised && <em className="padvised">{t("Conseillé pour ce Mac", "Advised for this Mac")}</em>}
+              </span>
             </button>
           ))}
         </div>
@@ -1214,16 +1261,25 @@ function AiPane() {
       </Section>
       <Section
         title={t("Texte des transcriptions", "Transcript text")}
-        note={t(
-          "Facultatif, conseillé : Qwen3-ASR écrit le texte, plus juste et sans phrase sautée, et Whisper repère chaque mot dans le temps pour la lanterne. Il couvre 23 langues ; l'estonien, le letton, le lituanien, le slovaque, le slovène, le croate, le bulgare et l'ukrainien restent transcrits par Whisper seul.",
-          "Optional, recommended: Qwen3-ASR writes the text, more accurately and without skipped sentences, and Whisper times each word for the lantern. It covers 23 languages; Estonian, Latvian, Lithuanian, Slovak, Slovenian, Croatian, Bulgarian and Ukrainian are still transcribed by Whisper alone.",
-        )}
+        note={
+          t(
+            "Facultatif, conseillé : un second modèle écrit le texte, plus juste et sans phrase sautée, et Whisper repère chaque mot dans le temps pour la lanterne. Qwen3-ASR sert dans 15 langues, dont le japonais, le coréen et l'arabe ; Parakeet, plus léger et plus rapide, dans 18 langues européennes, dont l'ukrainien, le croate et le lituanien. Chacun ne sert que là où il a été mesuré au moins aussi juste que Whisper seul ; avec les deux, Lumen prend le meilleur.",
+            "Optional, recommended: a second model writes the text, more accurately and without skipped sentences, and Whisper times each word for the lantern. Qwen3-ASR works in 15 languages, including Japanese, Korean and Arabic; Parakeet, lighter and faster, in 18 European languages, including Ukrainian, Croatian and Lithuanian. Each one is only used where it was measured at least as accurate as Whisper alone; with both, Lumen picks the better one.",
+          ) +
+          " " +
+          (writer
+            ? t(`${capital(inLang(lang))}, ${shortName(writer)} écrit le texte.`, `${capital(inLang(lang))}, ${shortName(writer)} writes the text.`)
+            : t(`${capital(inLang(lang))}, Whisper écrit seul le texte.`, `${capital(inLang(lang))}, Whisper writes the text alone.`))
+        }
       >
         <div className="set-card">{lines("asrtext")}</div>
       </Section>
     </>
   );
 }
+
+/** « en italien » → « En italien ». */
+const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Mémoire d'une carte graphique, comptée comme ses fabricants (8 Go, 12 Go). */
 function gpuMemory(bytes: number): string {
@@ -1295,6 +1351,34 @@ function VideosPane() {
   const settings = useApp((s) => s.settings);
   const setSetting = useApp((s) => s.setSetting);
   const info = useApp((s) => s.info);
+  // iPhone et iPad : ni yt-dlp ni cookies du navigateur, Lumen lit lui-même YouTube et Dailymotion
+  if (isIOS)
+    return (
+      <Section note={t("Collez un lien dans « Importer » : Lumen en fait une leçon que vous regardez avec la transcription synchronisée.", "Paste a link in “Import”: Lumen turns it into a lesson you watch with the transcript in sync.")}>
+        <div className="set-card">
+          <div className="set-row">
+            <div className="grow">
+              <strong>{t("YouTube et Dailymotion", "YouTube and Dailymotion")}</strong>
+              <span>{t("Lus directement par Lumen, rien à installer. Le son est transcrit sur ce Mac, l'image téléchargée dans un format que l'écran lit sans effort.", "Read directly by Lumen, nothing to install. The sound is transcribed on this Mac, the picture downloaded in a format the screen plays effortlessly.")}</span>
+            </div>
+            <span className="dot ok" />
+          </div>
+          <div className="set-row">
+            <div className="grow">
+              <strong>{t("Podcasts, articles, fichiers", "Podcasts, articles, files")}</strong>
+              <span>{t("Flux des podcasts, Apple Podcasts, pages web et liens directs vers un son ou une vidéo.", "Podcast feeds, Apple Podcasts, web pages and direct links to audio or video.")}</span>
+            </div>
+            <span className="dot ok" />
+          </div>
+          <div className="set-row">
+            <div className="grow">
+              <strong>{t("Autres sites vidéo", "Other video sites")}</strong>
+              <span>{t("TikTok, Instagram, Vimeo… : importez la leçon depuis Lumen sur votre ordinateur, elle arrivera ici avec la sauvegarde.", "TikTok, Instagram, Vimeo…: import the lesson from Lumen on your computer, it will arrive here with the backup.")}</span>
+            </div>
+          </div>
+        </div>
+      </Section>
+    );
   return (
     <Section note={t("Collez un lien dans « Importer » : Lumen en fait une leçon que vous regardez avec la transcription synchronisée.", "Paste a link in “Import”: Lumen turns it into a lesson you watch with the transcript in sync.")}>
       <div className="set-card">
@@ -1491,8 +1575,8 @@ function AboutPane() {
         </div>
         <p className="set-credits">
           {t(
-            "Dictionnaires : Wiktionnaire via kaikki.org ; JMdict et KANJIDIC2, selon la licence de l'Electronic Dictionary Research and Development Group ; corpus Universal Dependencies (tous CC BY-SA 4.0). Traduction : Qwen3.5 (Apache 2.0) par llama.cpp (MIT). Transcription : Qwen3-ASR (Apache 2.0) par llama.cpp et Whisper (MIT) par whisper.cpp. Voix : Supertonic 3 par sherpa-onnx. Polices : Literata, Newsreader, Geist (OFL).",
-            "Dictionaries: Wiktionary via kaikki.org; JMdict and KANJIDIC2, used under the Electronic Dictionary Research and Development Group licence; Universal Dependencies treebanks (all CC BY-SA 4.0). Translation: Qwen3.5 (Apache 2.0) with llama.cpp (MIT). Transcription: Qwen3-ASR (Apache 2.0) with llama.cpp, and Whisper (MIT) with whisper.cpp. Voice: Supertonic 3 with sherpa-onnx. Fonts: Literata, Newsreader, Geist (OFL).",
+            "Dictionnaires : Wiktionnaire via kaikki.org ; JMdict et KANJIDIC2, selon la licence de l'Electronic Dictionary Research and Development Group ; corpus Universal Dependencies (tous CC BY-SA 4.0). Traduction : Qwen3.5 (Apache 2.0) par llama.cpp (MIT). Transcription : Qwen3-ASR (Apache 2.0) par llama.cpp, Parakeet TDT 0.6B v3 de NVIDIA (CC BY 4.0, poids compressés par Lumen) par sherpa-onnx, et Whisper (MIT) par whisper.cpp. Voix : Supertonic 3 par sherpa-onnx (Apache 2.0). Polices : Literata, Newsreader, Geist (OFL).",
+            "Dictionaries: Wiktionary via kaikki.org; JMdict and KANJIDIC2, used under the Electronic Dictionary Research and Development Group licence; Universal Dependencies treebanks (all CC BY-SA 4.0). Translation: Qwen3.5 (Apache 2.0) with llama.cpp (MIT). Transcription: Qwen3-ASR (Apache 2.0) with llama.cpp, NVIDIA's Parakeet TDT 0.6B v3 (CC BY 4.0, weights compressed by Lumen) with sherpa-onnx, and Whisper (MIT) with whisper.cpp. Voice: Supertonic 3 with sherpa-onnx (Apache 2.0). Fonts: Literata, Newsreader, Geist (OFL).",
           )}
         </p>
       </Section>

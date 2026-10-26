@@ -1,14 +1,15 @@
 import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from "motion/react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Avatar, AvatarArt } from "../components/Avatar";
 import { Icon } from "../components/Icon";
+import { useCompact } from "../components/MobileNav";
 import { Orb, Switch } from "../components/ui";
 import { api, errorText } from "../lib/api";
 import { formatWhen, isCloud, pickBackupFolder, placeDir, reloadProgress, restoreStage, useBackup } from "../lib/backup";
 import { count, t, type UiLang } from "../lib/i18n";
-import { LANGS, STARTERS, featuredLangs, langLower, starterCollection, type LangInfo } from "../lib/langs";
-import { inFolder } from "../lib/platform";
-import { PROFILES } from "../lib/profiles";
+import { LANGS, STARTERS, featuredLangs, flagOf, langLower, starterCollection, type LangInfo } from "../lib/langs";
+import { inFolder, isIOS } from "../lib/platform";
+import { PROFILES, useRecommendedProfile } from "../lib/profiles";
 import { formatBytes, formatNumber, useApp } from "../lib/store";
 import type { BackupInfo, BackupRestored, LangCode } from "../lib/types";
 import { HUES, NAME_MAX, avatarString, avatarStyles, choosePhoto, newSeed, userFrom, type AvatarStyle } from "../lib/user";
@@ -17,6 +18,8 @@ import { useDraft } from "./ProfileSection";
 const EASE = [0.16, 1, 0.3, 1] as const;
 // marge au-dessus de la scène pour que les rayons de l'astre ne soient pas coupés
 const CLIP_PAD = 200;
+// iPhone : écart entre l'horizon et le texte posé dessous
+const STEP_GAP = 44;
 
 const stepAnim = {
   initial: { opacity: 0, y: 16, filter: "blur(10px)" },
@@ -70,10 +73,17 @@ export function Onboarding() {
   const openLesson = useApp((s) => s.openLesson);
   const replay = useApp((s) => s.replay);
   const setReplay = useApp((s) => s.setReplay);
+  const compact = useCompact();
   const [n, setN] = useState(0);
   // en relecture, les langues déjà choisies restent cochées
   const [langs, setLangs] = useState<LangCode[]>(() => (replay ? useApp.getState().langs() : []));
   const [profile, setProfile] = useState("balanced");
+  // iPhone et iPad : le profil conseillé selon la mémoire de l'appareil, tant que rien n'est choisi
+  const advised = useRecommendedProfile();
+  const chose = useRef(false);
+  useEffect(() => {
+    if (!chose.current) setProfile(advised);
+  }, [advised]);
   // « Qu'est-ce qu'un modèle ? » déplié à l'étape de l'IA
   const [what, setWhat] = useState(false);
   const [bloom, setBloom] = useState<{ x: number; y: number } | null>(null);
@@ -85,6 +95,8 @@ export function Onboarding() {
   const restoring = useBackup((s) => s.restoring);
   const restoreError = useBackup((s) => s.restoreError);
   const [found, setFound] = useState<BackupInfo[] | null>(null);
+  // iPhone et iPad : le dossier « Lumen » d'iCloud Drive se choisit d'abord dans l'app Fichiers
+  const [needFolder, setNeedFolder] = useState(false);
   const [searchError, setSearchError] = useState("");
   const [picked, setPicked] = useState<string | null>(null);
   const [restored, setRestored] = useState<BackupRestored | null>(null);
@@ -121,6 +133,19 @@ export function Onboarding() {
   const skyY = useTransform(sy, (v) => v * -24);
   const orbX = useTransform(sx, (v) => v * 10);
 
+  // hauteur du texte de la bienvenue ou de la dernière étape (iPhone : l'horizon s'y ajuste)
+  const [stepH, setStepH] = useState(0);
+  const stepRo = useRef<ResizeObserver | null>(null);
+  const measureStep = useCallback((el: HTMLDivElement | null) => {
+    stepRo.current?.disconnect();
+    stepRo.current = null;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setStepH(el.offsetHeight));
+    ro.observe(el);
+    stepRo.current = ro;
+    setStepH(el.offsetHeight);
+  }, []);
+
   useLayoutEffect(() => {
     const el = stageRef.current;
     if (!el) return;
@@ -141,13 +166,19 @@ export function Onboarding() {
     [],
   );
 
-  // géométrie de l'astre selon l'étape
-  const orbCenter = n === 0 ? H * 0.32 : n === 4 ? H * 0.3 : 58;
-  const orbSize = n === 0 ? 132 : n === 4 ? 104 : 46;
-  const horizonY = H * 0.32 + 92;
+  // géométrie de l'astre selon l'étape ; sur iPhone, l'horizon (et l'astre avec lui) remonte
+  // quand le texte de la bienvenue ou de la dernière étape ne tiendrait pas dessous
+  const baseHorizon = H * 0.32 + 92;
+  const horizonY = compact && stepH ? Math.max(120, Math.min(baseHorizon, H - stepH - STEP_GAP - 8)) : baseHorizon;
+  const lift = baseHorizon - horizonY;
+  const orbCenter = n === 0 ? H * 0.32 - lift : n === 4 ? H * 0.3 - lift : 58;
+  const orbSize = n === 0 ? 132 : n === 4 ? (compact ? 88 : 104) : 46;
   const showHorizon = n === 0 || n === 4;
+  // sur iPhone, la bienvenue et la dernière étape se posent juste sous l'horizon
+  const below = compact ? { top: horizonY + STEP_GAP } : undefined;
 
   const toggle = (c: LangCode) => setLangs((l) => (l.includes(c) ? l.filter((x) => x !== c) : [...l, c]));
+  const featured = LANGS.filter((l) => featuredLangs().includes(l.code));
   const others = LANGS.filter((l) => !featuredLangs().includes(l.code));
 
   const langCard = (l: LangInfo, delay: number) => {
@@ -175,6 +206,34 @@ export function Onboarding() {
           {on && (
             <motion.span className="tick" initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }} transition={{ type: "spring", stiffness: 500, damping: 22 }}>
               <Icon name="check" size={14} stroke={2.6} />
+            </motion.span>
+          )}
+        </AnimatePresence>
+      </motion.button>
+    );
+  };
+
+  // iPhone : un drapeau et le nom de la langue, trois par ligne
+  const flagTile = (l: LangInfo, delay: number) => {
+    const on = langs.includes(l.code);
+    return (
+      <motion.button
+        key={l.code}
+        className={`ob-flag ${on ? "on" : ""}`}
+        onClick={() => toggle(l.code)}
+        aria-pressed={on}
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay, duration: 0.5, ease: EASE }}
+      >
+        <span className="ob-flag-art" aria-hidden="true">
+          {flagOf(l)}
+        </span>
+        <span className="ob-flag-name">{l.name}</span>
+        <AnimatePresence>
+          {on && (
+            <motion.span className="tick" initial={{ scale: 0 }} animate={{ scale: 1 }} exit={{ scale: 0 }} transition={{ type: "spring", stiffness: 500, damping: 22 }}>
+              <Icon name="check" size={11} stroke={3} />
             </motion.span>
           )}
         </AnimatePresence>
@@ -213,13 +272,18 @@ export function Onboarding() {
   const openRestore = () => {
     useBackup.setState({ restoreError: "" });
     setN(5);
+    if (isIOS && !backup?.dir) {
+      setNeedFolder(true);
+      return;
+    }
     void search();
   };
 
   const chooseFolder = async () => {
     const dir = await pickBackupFolder();
     if (!dir) return;
-    await setSetting("backup_dir", dir);
+    setNeedFolder(false);
+    if (!isIOS) await setSetting("backup_dir", dir);
     await useBackup.getState().refresh();
     void search();
   };
@@ -353,7 +417,7 @@ export function Onboarding() {
 
         <AnimatePresence mode="wait">
           {n === 0 && (
-            <motion.div key="0" className="ob-step welcome" {...stepAnim}>
+            <motion.div key="0" ref={measureStep} className="ob-step welcome" style={below} {...stepAnim}>
               <h1 className="ob-word" aria-label="Lumen">
                 {"Lumen".split("").map((c, i) => (
                   <motion.span
@@ -448,10 +512,11 @@ export function Onboarding() {
 
           {n === 2 && (
             <motion.div key="2" className="ob-step form" {...stepAnim}>
+              {/* « voulez-vous » ne se coupe pas au trait d'union (gare au petit écran de l'iPhone) */}
               <h2>
                 {firstName
-                  ? t(`${firstName}, quelles langues voulez-vous apprendre ?`, `${firstName}, which languages do you want to learn?`)
-                  : t("Quelles langues voulez-vous apprendre ?", "Which languages do you want to learn?")}
+                  ? t(`${firstName}, quelles langues voulez-\u2060vous apprendre ?`, `${firstName}, which languages do you want to learn?`)
+                  : t("Quelles langues voulez-\u2060vous apprendre ?", "Which languages do you want to learn?")}
               </h2>
               <p className="ob-sub">
                 {t(
@@ -461,9 +526,17 @@ export function Onboarding() {
               </p>
               <div className="ob-langs-scroll">
                 <div className="ob-group">{t("Les plus étudiées", "Most studied")}</div>
-                <div className="ob-grid langs">{LANGS.filter((l) => featuredLangs().includes(l.code)).map((l, i) => langCard(l, 0.15 + i * 0.06))}</div>
+                {compact ? (
+                  <div className="ob-grid flags">{featured.map((l, i) => flagTile(l, 0.15 + i * 0.04))}</div>
+                ) : (
+                  <div className="ob-grid langs">{featured.map((l, i) => langCard(l, 0.15 + i * 0.06))}</div>
+                )}
                 <div className="ob-group">{t(`Et ${others.length} autres langues`, `And ${others.length} more languages`)}</div>
-                <div className="ob-grid langs compact">{others.map((l, i) => langCard(l, 0.5 + i * 0.025))}</div>
+                {compact ? (
+                  <div className="ob-grid flags">{others.map((l, i) => flagTile(l, 0.4 + i * 0.02))}</div>
+                ) : (
+                  <div className="ob-grid langs compact">{others.map((l, i) => langCard(l, 0.5 + i * 0.025))}</div>
+                )}
               </div>
               <div className="ob-actions">
                 <button className="ob-link" onClick={() => setN(1)}>
@@ -514,7 +587,10 @@ export function Onboarding() {
                   <motion.button
                     key={p.id}
                     className={`ob-card ${profile === p.id ? "on" : ""}`}
-                    onClick={() => setProfile(p.id)}
+                    onClick={() => {
+                      chose.current = true;
+                      setProfile(p.id);
+                    }}
                     onMouseMove={glow}
                     initial={{ opacity: 0, y: 18 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -527,7 +603,10 @@ export function Onboarding() {
                     </span>
                     <strong className="pname">{p.name}</strong>
                     <span className="pdesc">{p.desc}</span>
-                    <span className="psize">{formatBytes(p.size)}</span>
+                    <span className="psize">
+                      {formatBytes(p.size)}
+                      {isIOS && p.id === advised && <em className="padvised">{t("Conseillé pour ce Mac", "Advised for this Mac")}</em>}
+                    </span>
                   </motion.button>
                 ))}
               </div>
@@ -543,7 +622,7 @@ export function Onboarding() {
           )}
 
           {n === 4 && restored && (
-            <motion.div key="4r" className="ob-step ready" {...stepAnim}>
+            <motion.div key="4r" ref={measureStep} className="ob-step ready" style={below} {...stepAnim}>
               {restoredUser && !restoredUser.empty && (
                 <motion.span
                   className="ob-me-back"
@@ -568,7 +647,7 @@ export function Onboarding() {
           )}
 
           {n === 4 && !restored && (
-            <motion.div key="4" className="ob-step ready" {...stepAnim}>
+            <motion.div key="4" ref={measureStep} className="ob-step ready" style={below} {...stepAnim}>
               <h2>{firstName ? t(`Tout est prêt, ${firstName}`, `Everything is ready, ${firstName}`) : t("Tout est prêt", "Everything is ready")}</h2>
               <p className="ob-sub">
                 {t(
@@ -605,7 +684,23 @@ export function Onboarding() {
             <motion.div key="5" className="ob-step form" {...stepAnim}>
               <h2>{t("Retrouver ma progression", "Get my progress back")}</h2>
               <p className="ob-sub">{t("Vos mots, vos expressions, vos leçons et vos réglages reviennent tels que vous les aviez laissés.", "Your words, phrases, lessons and settings come back just as you left them.")}</p>
-              {restoring ? (
+              {needFolder ? (
+                <div className="ob-folder-help">
+                  <Icon name="cloud" size={26} />
+                  <p>
+                    {t(
+                      "Sur votre\u00a0Mac, Lumen sauvegarde votre progression dans un dossier « Lumen » : dans iCloud Drive, ou dans le nuage choisi dans ses Réglages (Google Drive, Dropbox…). Touchez « Choisir le dossier », trouvez ce dossier Lumen dans l'app Fichiers, puis touchez « Ouvrir » : Lumen y retrouvera tout, et pourra y revenir ensuite.",
+                      "On your\u00a0Mac, Lumen backs up your progress to a “Lumen” folder: in iCloud Drive, or in the cloud chosen in its Settings (Google Drive, Dropbox…). Tap “Choose the folder”, find that Lumen folder in the Files app, then tap “Open”: Lumen will find everything there, and can come back to it later.",
+                    )}
+                  </p>
+                  <small>
+                    {t(
+                      "Google Drive ou Dropbox : leur app doit être installée sur cet appareil pour apparaître dans Fichiers. Pas de dossier Lumen ? Sur le\u00a0Mac, ouvrez Lumen › Réglages › Sauvegarde et activez la sauvegarde.",
+                      "Google Drive or Dropbox: their app must be installed on this device to show up in Files. No Lumen folder? On the\u00a0Mac, open Lumen › Settings › Backup and turn on the backup.",
+                    )}
+                  </small>
+                </div>
+              ) : restoring ? (
                 <div className="ob-restoring">
                   <Orb size={30} />
                   <strong>{restoreStage(restoring.stage) ?? t("Restauration…", "Restoring…")}</strong>
@@ -668,15 +763,19 @@ export function Onboarding() {
                 <button className="ob-link" onClick={() => setN(0)} disabled={!!restoring}>
                   {t("Retour", "Back")}
                 </button>
-                {found !== null && !found.length ? (
+                {needFolder ? (
+                  <button className="ob-cta" onClick={chooseFolder}>
+                    {t("Choisir le dossier", "Choose the folder")} <Icon name="forward" size={16} stroke={2} />
+                  </button>
+                ) : found !== null && !found.length ? (
                   <>
-                    {otherPlaces.slice(0, 3).map((p) => (
+                    {!isIOS && otherPlaces.slice(0, 3).map((p) => (
                       <button key={p.path || p.kind} className="ob-link" onClick={() => void searchIn(p)}>
                         {t(`Chercher dans ${p.name}`, `Look in ${p.name}`)}
                       </button>
                     ))}
                     <button className="ob-link" onClick={chooseFolder}>
-                      {t("Choisir un dossier…", "Choose a folder…")}
+                      {isIOS ? t("Choisir un autre dossier…", "Choose another folder…") : t("Choisir un dossier…", "Choose a folder…")}
                     </button>
                     <button className="ob-cta" onClick={() => setN(1)}>
                       {t("Commencer sans sauvegarde", "Start without a backup")} <Icon name="forward" size={16} stroke={2} />

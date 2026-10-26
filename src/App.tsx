@@ -5,6 +5,7 @@ import { Guide } from "./components/Guide";
 import { News, useNewsOnUpdate } from "./components/News";
 import { Tour } from "./components/Tour";
 import { Shortcuts } from "./components/Shortcuts";
+import { MobileNav, useCompact } from "./components/MobileNav";
 import { Sidebar } from "./components/Sidebar";
 import { WindowControls } from "./components/WindowControls";
 import { Orb, Toasts } from "./components/ui";
@@ -13,7 +14,7 @@ import { MEDIA_EXT, TEXT_EXT, extOf } from "./lib/importers";
 import { startBackupEvents } from "./lib/backup";
 import { setUiLang, t, type UiLang } from "./lib/i18n";
 import { useAppMenu, useWindowsKeys } from "./lib/menu";
-import { playableCodecs } from "./lib/platform";
+import { isMobile, playableCodecs } from "./lib/platform";
 import { useApp } from "./lib/store";
 import { startUpdateChecks } from "./lib/updater";
 import { ImportSheet } from "./views/ImportSheet";
@@ -38,7 +39,8 @@ function useTheme() {
     };
     apply();
     mq.addEventListener("change", apply);
-    if (isTauri) {
+    // la fenêtre suit le thème choisi (sur iPhone et iPad, pas de fenêtre : le système décide)
+    if (isTauri && !isMobile) {
       import("@tauri-apps/api/window")
         .then(({ getCurrentWindow }) => getCurrentWindow().setTheme(theme === "system" ? null : (theme as "light" | "dark")))
         .catch(() => {});
@@ -52,7 +54,8 @@ function useFileDrop(enabled: boolean) {
   const toast = useApp((s) => s.toast);
   const [over, setOver] = useState(false);
   useEffect(() => {
-    if (!isTauri || !enabled) return;
+    // glisser-déposer : Mac et Windows (sur iPhone et iPad, l'import passe par l'app Fichiers)
+    if (!isTauri || isMobile || !enabled) return;
     let unlisten: (() => void) | undefined;
     import("@tauri-apps/api/webview").then(async ({ getCurrentWebview }) => {
       unlisten = await getCurrentWebview().onDragDropEvent((e) => {
@@ -82,6 +85,11 @@ export function App() {
   const ui = useApp((s) => s.settings.ui_lang) as UiLang;
   if (ui) setUiLang(ui);
   const [failed, setFailed] = useState<string | null>(null);
+  // iPhone : navigation en bas de l'écran au lieu de la barre latérale
+  const compact = useCompact();
+  useEffect(() => {
+    document.documentElement.classList.toggle("compact", compact);
+  }, [compact]);
   // barre latérale repliée dans une leçon (réglage reader_sidebar), visible partout ailleurs
   const sideHidden = useApp((s) => s.view === "reader" && s.settings.reader_sidebar === "0");
   // pendant le repli, le contenu est rogné ; ensuite les menus peuvent déborder
@@ -107,7 +115,8 @@ export function App() {
   useNewsOnUpdate();
 
   useEffect(() => {
-    if (isTauri && navigator.userAgent.includes("Mac")) document.documentElement.classList.add("vibrant");
+    // vibrance de la fenêtre : Mac seulement (l'iPhone se dit aussi « like Mac OS X »)
+    if (isTauri && !isMobile && navigator.userAgent.includes("Mac")) document.documentElement.classList.add("vibrant");
     // formats d'image que cette fenêtre lit : les vidéos en ligne arrivent dans le plus léger
     api()
       .mediaCodecs(playableCodecs())
@@ -166,10 +175,12 @@ export function App() {
 
   // changer de langue remonte toute l'interface : chaque texte se recalcule
   return (
-    <div key={ui} className={`app ${sideHidden ? "side-hidden" : ""}`}>
-      <div className={`sidebar-shell ${sideHidden || sliding ? "clip" : ""}`} inert={sideHidden}>
-        <Sidebar />
-      </div>
+    <div key={ui} className={`app ${sideHidden && !compact ? "side-hidden" : ""} ${compact ? "compact" : ""}`}>
+      {!compact && (
+        <div className={`sidebar-shell ${sideHidden || sliding ? "clip" : ""}`} inert={sideHidden}>
+          <Sidebar />
+        </div>
+      )}
       <main className="main">
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
@@ -191,6 +202,7 @@ export function App() {
           </motion.div>
         </AnimatePresence>
       </main>
+      {compact && <MobileNav />}
       <ImportSheet />
       <Preview />
       <Guide />

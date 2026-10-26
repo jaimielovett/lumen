@@ -18,6 +18,7 @@ import { UpdateCard } from "./UpdateCard";
 import { count, formatNumber, t } from "../lib/i18n";
 import { studyTime } from "../lib/progress";
 import { useUserName } from "../lib/user";
+import { shortName, writerFor } from "../lib/writers";
 
 const nav = (): { view: View; label: string; icon: IconName }[] => [
   { view: "library", label: t("Bibliothèque", "Library"), icon: "library" },
@@ -64,7 +65,11 @@ export function Sidebar() {
   useEffect(() => {
     api()
       .lessonsList(lang)
-      .then((l) => setRecent(l.filter((x) => x.opened_at).slice(0, 4)))
+      .then((l) => {
+        // un livre n'y figure qu'une fois, sous son titre (pas « Chapitre 3 »)
+        const books = new Set<string>();
+        setRecent(l.filter((x) => x.opened_at && (x.kind !== "book" || !x.collection || (!books.has(x.collection) && !!books.add(x.collection)))).slice(0, 4));
+      })
       .catch(() => {});
   }, [lang, libraryVersion, lessonId]);
 
@@ -72,16 +77,18 @@ export function Sidebar() {
   const online = useOnline();
   const llm = models.find((m) => m.kind === "llm" && m.installed && m.id === settings.llm_model) ?? models.find((m) => m.kind === "llm" && m.installed);
   const asr = models.find((m) => m.kind === "asr" && m.installed && m.id === settings.asr_model) ?? models.find((m) => m.kind === "asr" && m.installed);
-  const asrText = models.find((m) => m.kind === "asrtext" && m.installed);
+  // Qwen3-ASR ou Parakeet : celui qui écrit le texte dans la langue étudiée
+  const asrText = writerFor(models, lang);
   const busy = Object.keys(downloads).length > 0;
   const voice = models.find((m) => m.kind === "tts");
 
   const switchLang = async (code: LangCode) => {
     setMenu(false);
+    // on quitte la leçon avant : la lecture en cours change avec la langue
+    go(view === "discover" ? "discover" : "library");
     await setSetting("lang", code);
     if (!langs.includes(code)) await setSetting("langs", [...langs, code].join(","));
     await refreshKnown();
-    go(view === "discover" ? "discover" : "library");
   };
 
   return (
@@ -210,8 +217,8 @@ export function Sidebar() {
           <div className="side-section">{t("Récemment ouvert", "Recently opened")}</div>
           <div className="side-recent">
             {recent.map((r) => (
-              <button key={r.id} onClick={() => openLesson(r.id)} title={r.title}>
-                {r.title}
+              <button key={r.id} onClick={() => openLesson(r.id)} title={r.kind === "book" && r.collection ? `${r.collection} · ${r.title}` : r.title}>
+                {r.kind === "book" && r.collection ? r.collection : r.title}
               </button>
             ))}
           </div>
@@ -232,7 +239,9 @@ export function Sidebar() {
                 ? t(`${online.provider.name} · en ligne`, `${online.provider.name} · online`)
                 : online.provider.id === "custom"
                   ? t("Serveur : adresse à indiquer", "Server: address needed")
-                  : t(`${online.provider.name} : clé à ajouter`, `${online.provider.name}: key needed`)}
+                  : online.provider.id === "chatgpt"
+                    ? t("ChatGPT : compte à connecter", "ChatGPT: account to connect")
+                    : t(`${online.provider.name} : clé à ajouter`, `${online.provider.name}: key needed`)}
             </span>
           )}
           {/* le modèle de ce Mac, tant qu'il sert à quelque chose */}
@@ -246,7 +255,7 @@ export function Sidebar() {
             <span className={`dot ${asr ? "ok" : ""}`} />
             {asr
               ? asrText
-                ? t("Qwen3-ASR et Whisper · prêts", "Qwen3-ASR and Whisper · ready")
+                ? t(`${shortName(asrText)} et Whisper · prêts`, `${shortName(asrText)} and Whisper · ready`)
                 : t(`${asr.name.replace("Large v3 ", "")} · prêt`, `${asr.name.replace("Large v3 ", "")} · ready`)
               : t("Transcription : à installer", "Transcription: to install")}
           </span>

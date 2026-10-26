@@ -18,13 +18,13 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.7", features = [] }
+# Whisper dans l'app (iPhone et iPad) : whisper.cpp compilé avec la ggml de llama.cpp (build.rs)
+cc = "1"
 
 [dependencies]
 tauri = { version = "2.12", features = ["protocol-asset", "macos-private-api"] }
 tauri-plugin-dialog = "2.8"
 tauri-plugin-opener = "2.7"
-tauri-plugin-updater = "2.13"
-tauri-plugin-process = "2.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.40", features = ["bundled", "backup"] }
@@ -41,14 +41,23 @@ anyhow = "1"
 base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 parking_lot = "0.12"
+# hasard du système (connexion à ChatGPT : PKCE, state, nonce) ; déjà compilé pour rustls
+getrandom = "0.3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 llama-cpp-2 = { version = "0.1.158", default-features = false, features = ["metal", "mtmd"] }
+
+# Mac, iPhone et iPad : les mêmes outils d'Apple (AVFoundation, AudioToolbox, Foundation)
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+# dépendance directe (déjà là par llama-cpp-2) : build.rs y lit où sont les en-têtes de
+# ggml (DEP_LLAMA_GGML_CMAKE_DIR), pour y greffer Whisper sur iPhone et iPad
+llama-cpp-sys-2 = { version = "0.1.158", default-features = false }
 # état d'envoi vers iCloud des sauvegardes (déjà compilés pour Tauri)
 objc2 = { version = "0.6", features = ["exception"] }
 objc2-foundation = "0.3"
 # allègement des vidéos et des sons importés (src/compress.rs) : HEVC par la
-# puce vidéo du Mac, AAC par les outils de macOS
+# puce vidéo, AAC par les outils d'Apple ; sur iPhone aussi le son des leçons
+# (voix, podcasts) et son décodage pour la transcription
 block2 = "0.6"
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFString", "CFURL", "CFCGTypes"] }
 objc2-core-audio-types = { version = "0.3", default-features = false, features = ["std", "CoreAudioBaseTypes"] }
@@ -56,8 +65,25 @@ objc2-core-media = { version = "0.3", default-features = false, features = ["std
 objc2-audio-toolbox = { version = "0.3", default-features = false, features = ["std", "AudioCodec", "AudioConverter", "AudioFile", "ExtendedAudioFile", "objc2-core-audio-types", "objc2-core-foundation"] }
 objc2-av-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "AVAsset", "AVAssetReader", "AVAssetReaderOutput", "AVAssetTrack", "AVAssetWriter", "AVAssetWriterInput", "AVMediaFormat", "AVVideoSettings", "objc2-core-media", "objc2-core-foundation"] }
 
-[target.'cfg(not(any(target_os = "macos", windows)))'.dependencies]
+[target.'cfg(not(any(target_os = "macos", target_os = "ios", windows)))'.dependencies]
 llama-cpp-2 = { version = "0.1.158", default-features = false, features = ["mtmd"] }
+
+# mises à jour automatiques et relance : Mac et Windows seulement (sur iPhone et
+# iPad, c'est l'App Store ou TestFlight qui met l'app à jour)
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+tauri-plugin-updater = "2.13"
+tauri-plugin-process = "2.4"
+
+# iPhone et iPad : l'IA sur la puce graphique (Metal), comme sur Mac ; ce que fait
+# la version Windows sans les outils de macOS (archives .tar.bz2, couvertures)
+[target.'cfg(target_os = "ios")'.dependencies]
+llama-cpp-2 = { version = "0.1.158", default-features = false, features = ["metal", "mtmd"] }
+# la voix naturelle et Parakeet dans l'app (src/sherpa_ios.rs) : le crate officiel apporte
+# le framework iOS de sherpa-onnx (onnxruntime compris), intégré par gen/apple/project.yml
+sherpa-onnx = { version = "=1.13.8", default-features = false, features = ["shared"] }
+tar = "0.4"
+bzip2 = "0.6"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
 
 # Windows : ce que macOS fait avec ses propres outils (afconvert, sips, tar, ioreg)
 [target.'cfg(windows)'.dependencies]

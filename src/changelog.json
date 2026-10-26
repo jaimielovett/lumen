@@ -2,6 +2,152 @@
   "_lisezmoi": "Nouveautés montrées après chaque mise à jour (components/News.tsx) et notes de publication. Ajouter ce qui change sous la version \"next\" au fil du travail ; « Publier une version » lui donne son numéro et sa date. Icônes : noms de components/Icon.tsx. Actions : \"tour\" (visite guidée), \"guide\", \"settings:<page>\" (profile, general, langs, reading, voice, discover, podcasts, ai, videos, backup, storage, lingq, about), \"import:<onglet>\" (text, link, file, media, podcast), \"view:<vue>\" (library, discover, playlists, chat, vocab, progress).",
   "releases": [
     {
+      "version": "next",
+      "title": { "fr": "Les nouveautés de Lumen 1.3.0", "en": "What's new from Lumen 1.3.0" },
+      "items": [
+        {
+          "icon": "refresh",
+          "title": { "fr": "Votre progression sur tous vos appareils", "en": "Your progress on all your devices" },
+          "body": {
+            "fr": "Retrouvez une fois votre progression sur un autre Mac ou PC (Réglages › Sauvegarde) : ensuite, ce que vous faites sur l'un rejoint l'autre par la sauvegarde, mots appris, leçons, page atteinte, temps d'étude. Chaque appareil ajoute ce qu'a changé l'autre sans rien écraser, à chaque lancement et toutes les 10 minutes. « Fusionner » réunit aussi deux progressions déjà commencées chacune de leur côté.",
+            "en": "Bring your progress once to another Mac or PC (Settings › Backup): from then on, what you do on one reaches the other through the backup, words learned, lessons, the page you reached, study time. Each device adds what the other changed without overwriting anything, at every launch and every 10 minutes. “Merge” also brings together two progressions started separately."
+          },
+          "action": "settings:backup"
+        },
+        {
+          "icon": "type",
+          "title": { "fr": "Les phrases traduites, même par le plus léger des modèles", "en": "Sentences translated, even by the lightest model" },
+          "body": {
+            "fr": "Avec Qwen3.5 0.8B, la traduction d'une phrase recopiait parfois la phrase d'origine. Elle est désormais traduite, et une phrase simplement recopiée n'est jamais gardée en mémoire.",
+            "en": "With Qwen3.5 0.8B, translating a sentence sometimes copied the original sentence back. It's now translated, and a sentence merely copied back is never kept in memory."
+          }
+        },
+        {
+          "icon": "clock",
+          "title": { "fr": "Trier et filtrer dans Découvrir", "en": "Sort and filter in Discover" },
+          "body": {
+            "fr": "Sous le champ de recherche de Découvrir, choisissez l'ordre des résultats : pertinence, les plus récents, les plus populaires ou les plus anciens. Le bouton « Filtres » ajoute la date de publication (aujourd'hui, cette semaine, ce mois-ci, cette année, il y a plus d'un an), la durée, les vidéos sous-titrées, seulement dans la langue étudiée, sans ce qui est déjà dans votre bibliothèque. Sans recherche, les mêmes filtres rangent les trouvailles de Lumen en une grille, des plus récentes aux plus anciennes. Vos choix restent d'une fois sur l'autre.",
+            "en": "Under Discover's search field, pick the order of the results: relevance, newest, most popular or oldest. The “Filters” button adds the publication date (today, this week, this month, this year, over a year ago), the length, videos with subtitles, only in the language you study, and without what's already in your library. Without a search, the same filters lay out Lumen's finds in a grid, from newest to oldest. Your choices stay from one time to the next."
+          },
+          "action": "view:discover"
+        },
+        {
+          "icon": "more",
+          "title": { "fr": "Les menus passent devant les leçons", "en": "Menus stay in front of the lessons" },
+          "body": {
+            "fr": "Le menu « … » d'une leçon (Supprimer, Renommer, Marquer comme lu…) se cachait parfois derrière la carte voisine avec les petites cartes. Il passe désormais toujours au premier plan, et s'ouvre vers le haut quand la place manque en bas de la fenêtre.",
+            "en": "A lesson's “…” menu (Delete, Rename, Mark as read…) sometimes hid behind the next card with small cards. It now always comes to the front, and opens upward when there's no room at the bottom of the window."
+          }
+        },
+        {
+          "icon": "wave",
+          "title": { "fr": "Parakeet : des transcriptions plus justes, jusqu'en ukrainien", "en": "Parakeet: more accurate transcripts, even in Ukrainian" },
+          "body": {
+            "fr": "Nouveau modèle facultatif dans Réglages › IA : Parakeet V3, de NVIDIA, écrit le texte de vos audios et de vos vidéos, et Whisper garde le minutage des mots pour la lanterne. Rapide et léger (1 Go), il ne saute pas de phrase et ponctue bien : sur 14 leçons italiennes, 2,7 % de mots faux, contre 7,4 % pour Whisper seul. Il sert dans 18 langues, dont l'ukrainien, le croate, le lituanien et le slovaque, jusqu'ici transcrits par Whisper seul. Mesuré langue par langue, Lumen prend désormais dans chacune le plus juste de Qwen3-ASR, Parakeet et Whisper seul.",
+            "en": "A new optional model in Settings › AI: NVIDIA's Parakeet V3 writes the text of your audio and videos, while Whisper keeps timing the words for the lantern. Fast and light (1 GB), it doesn't skip sentences and punctuates well: on 14 Italian lessons, 2.7% wrong words, against 7.4% for Whisper alone. It works in 18 languages, including Ukrainian, Croatian, Lithuanian and Slovak, until now transcribed by Whisper alone. Measured language by language, Lumen now picks in each one the most accurate of Qwen3-ASR, Parakeet and Whisper alone."
+          },
+          "action": "settings:ai"
+        },
+        {
+          "icon": "sparkle",
+          "title": { "fr": "Votre abonnement ChatGPT dans Lumen", "en": "Your ChatGPT subscription in Lumen" },
+          "body": {
+            "fr": "Abonné à ChatGPT Plus ou Pro ? Dans Réglages › IA, choisissez ChatGPT et « Continuer avec ChatGPT » : le sens des mots, les phrases et le chat puisent dans votre forfait, sans clé à copier. Lumen va doucement : seul le mot où vous vous arrêtez part, et chaque traduction est gardée. Aperçu d'OpenAI, ouvert aux applications open source.",
+            "en": "Subscribed to ChatGPT Plus or Pro? In Settings › AI, pick ChatGPT and “Continue with ChatGPT”: word meanings, sentences and the chat draw on your plan, with no key to copy. Lumen takes it easy: only the word you stop on is sent, and every translation is kept. An OpenAI preview, open to open-source apps."
+          },
+          "action": "settings:ai"
+        },
+        {
+          "icon": "read",
+          "title": { "fr": "Marquer comme lu", "en": "Mark as read" },
+          "body": {
+            "fr": "Une leçon, une playlist entière ou un livre se marquent comme lus, ou de nouveau à lire, depuis leur menu « … » : dans les playlists comme dans la bibliothèque. Une playlist marquée repart de sa première leçon, et vos mots gardent leur couleur.",
+            "en": "A lesson, a whole playlist or a book can be marked as read, or as unread again, from its “…” menu: in playlists as well as in the library. A marked playlist starts again from its first lesson, and your words keep their color."
+          },
+          "action": "view:playlists"
+        },
+        {
+          "icon": "repeat",
+          "title": { "fr": "Des playlists en boucle", "en": "Looping playlists" },
+          "body": {
+            "fr": "Le bouton « En boucle » d'une playlist fait reprendre l'écoute à la première leçon après la dernière, sans fin. Il est aussi dans le bandeau de la playlist, en haut de la leçon, et dans le menu Leçon.",
+            "en": "A playlist's “Loop” button brings listening back to the first lesson after the last one, endlessly. It is also in the playlist strip at the top of the lesson, and in the Lesson menu."
+          },
+          "action": "view:playlists"
+        },
+        {
+          "icon": "check",
+          "title": { "fr": "Plusieurs leçons d'un coup", "en": "Several lessons at once" },
+          "body": {
+            "fr": "« Sélectionner », au-dessus des leçons d'une playlist : cochez-en plusieurs (Maj + clic pour toute une suite, ⌘A pour toutes), puis marquez-les lues, retirez-les de la playlist ou supprimez-les. La sélection de la bibliothèque sait aussi marquer comme lu.",
+            "en": "“Select”, above a playlist's lessons: check several of them (Shift-click for a whole run, ⌘A for all), then mark them as read, remove them from the playlist or delete them. Selection in the library can now mark as read too."
+          },
+          "action": "view:playlists"
+        },
+        {
+          "icon": "book",
+          "title": { "fr": "Chaque langue, sa lecture en cours", "en": "Each language, its own current reading" },
+          "body": {
+            "fr": "« Lecture en cours » et « Reprendre la lecture » (⌘R) rouvrent la dernière leçon de la langue où vous êtes, et non plus la dernière toutes langues confondues. Passer à une autre langue retrouve la leçon où vous en étiez dans celle-ci.",
+            "en": "“Now reading” and “Resume Reading” (⌘R) reopen the last lesson of the language you're in, no longer the last one across all languages. Switching to another language brings back the lesson where you were in it."
+          }
+        },
+        {
+          "icon": "book",
+          "title": { "fr": "Un livre, une seule carte", "en": "One book, one card" },
+          "body": {
+            "fr": "Un livre importé (EPUB, ou un long PDF) n'éparpille plus ses chapitres dans la bibliothèque : il y tient en une seule carte, avec sa vraie couverture. La toucher reprend la lecture là où vous en étiez, et la dernière page d'un chapitre mène au suivant. Ses chapitres forment aussi une playlist, pour les lire dans l'ordre ou en choisir un. Les livres EPUB déjà importés se rassemblent d'eux-mêmes.",
+            "en": "An imported book (EPUB, or a long PDF) no longer scatters its chapters across the library: it fits on a single card, with its real cover. Clicking it picks up the reading where you left off, and the last page of a chapter leads to the next. Its chapters also form a playlist, to read them in order or pick one. EPUB books you already imported gather themselves too."
+          },
+          "action": "import:file"
+        },
+        {
+          "icon": "layers",
+          "title": { "fr": "Les vrais chapitres du livre", "en": "The book's real chapters" },
+          "body": {
+            "fr": "Lumen suit désormais la table des matières du livre : de vrais chapitres, plus des dizaines de fichiers découpés par l'éditeur. Couverture, page de titre, table des matières et mentions légales sont décochées d'office, et un long chapitre se lit en parties égales.",
+            "en": "Lumen now follows the book's table of contents: real chapters, no longer dozens of files cut up by the publisher. Cover, title page, table of contents and legal notices are unchecked for you, and a long chapter reads in equal parts."
+          },
+          "action": "import:file"
+        },
+        {
+          "icon": "bigcards",
+          "title": { "fr": "La bibliothèque comme vous l'aimez", "en": "The library the way you like it" },
+          "body": {
+            "fr": "Trois présentations, d'un clic en haut de la bibliothèque : grandes cartes, petites cartes pour en voir davantage, ou une liste comme dans le Finder, triée par nom, genre, longueur, mots nouveaux, avancement ou date d'un clic sur le titre d'une colonne. Les livres s'y déplient pour montrer leurs chapitres.",
+            "en": "Three views, one click away at the top of the library: large cards, small cards to see more at once, or a list like in Finder, sorted by name, kind, length, new words, progress or date with a click on a column title. Books unfold there to show their chapters."
+          },
+          "action": "view:library"
+        },
+        {
+          "icon": "video",
+          "title": { "fr": "Fermer la vidéo, garder le son", "en": "Close the video, keep the sound" },
+          "body": {
+            "fr": "Dans une leçon vidéo, la croix en haut de l'image la referme : le son continue, la lanterne aussi, et le texte prend toute la place. Le bouton « Vidéo » de la barre du haut, la touche V ou le menu Leçon la font revenir. Lumen retient votre choix pour les leçons suivantes.",
+            "en": "In a video lesson, the cross at the top of the picture closes it: the sound goes on, so does the lantern, and the text gets all the room. The “Video” button in the top bar, the V key or the Lesson menu bring it back. Lumen remembers your choice for the next lessons."
+          }
+        },
+        {
+          "icon": "check",
+          "title": { "fr": "Ce qui est déjà dans votre bibliothèque", "en": "What's already in your library" },
+          "body": {
+            "fr": "Découvrir reconnaît mieux ce que vous avez déjà importé : les résultats de la recherche aussi portent « Dans la bibliothèque », une chanson trouvée par la recherche est reconnue dans les classements, et une leçon supprimée n'est plus signalée. Toucher la carte ouvre la leçon.",
+            "en": "Discover better recognizes what you've already imported: search results now show “In your library” too, a song found through search is recognized in the charts, and a deleted lesson is no longer flagged. Clicking the card opens the lesson."
+          },
+          "action": "view:discover"
+        },
+        {
+          "icon": "image",
+          "title": { "fr": "Les articles gardent leur image", "en": "Articles keep their picture" },
+          "body": {
+            "fr": "Un article tiré de Découvrir, de la recherche ou d'un lien garde sa photo pour couverture dans la bibliothèque, au lieu de l'œuvre générée.",
+            "en": "An article taken from Discover, from search or from a link keeps its photo as its cover in the library, instead of the generated artwork."
+          },
+          "action": "view:discover"
+        }
+      ]
+    },
+    {
       "version": "1.1.1",
       "date": "2026-10-12",
       "title": { "fr": "Découvrir sans limite de niveau", "en": "Discover across all levels" },

@@ -13,16 +13,19 @@ import "./styles/discover.css";
 import "./styles/preview.css";
 import "./styles/news.css";
 import "./styles/tour.css";
+import "./styles/mobile.css";
 
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "./App";
 import { api, initApi, isTauri } from "./lib/api";
-import { isWindows } from "./lib/platform";
+import { isIOS, isIPad, isWindows } from "./lib/platform";
 import { useApp } from "./lib/store";
 
 // sous Windows : boutons de la fenêtre, barres de défilement fines, polices de repli (styles .win)
 if (isWindows) document.documentElement.classList.add("win");
+// iPhone et iPad : écran tactile, zones réservées (encoche, barre du bas), mise en page compacte (styles/mobile.css)
+if (isIOS) document.documentElement.classList.add("ios", isIPad ? "ipad" : "iphone");
 
 /**
  * Polices chargées avant le premier affichage : sinon titres et extraits
@@ -39,6 +42,8 @@ function fontsReady(): Promise<unknown> {
 Promise.all([initApi(), fontsReady()]).then(() => {
   // accès de test dans l'aperçu navigateur (jamais dans l'application)
   if (import.meta.env.DEV && !isTauri) (window as unknown as Record<string, unknown>).__lumen = { api, useApp };
+  // en développement dans la vraie fenêtre (simulateur iPhone compris) : télécommande (scripts/vite-remote.ts)
+  if (import.meta.env.DEV && isTauri) void import("./lib/devremote").then((m) => m.startRemote());
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
       <App />

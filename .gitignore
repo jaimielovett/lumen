@@ -2,7 +2,9 @@ node_modules
 dist
 src-tauri/target
 src-tauri/binaries
-src-tauri/gen
+# schémas régénérés à chaque compilation ; le projet Xcode d'iOS (gen/apple), lui, est versionné
+src-tauri/gen/*
+!src-tauri/gen/apple
 *.log
 .DS_Store
 tsconfig.tsbuildinfo
@@ -24,3 +26,6 @@ __pycache__
 *.sqlite
 *.lumen
 cles.tsv
+# iPhone et iPad : framework de sherpa-onnx, téléchargé et copié ici par le crate sherpa-onnx à la compilation
+src-tauri/sherpa-onnx.xcframework
+src-tauri/.sherpa-onnx-xcframework-version
