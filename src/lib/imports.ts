@@ -56,6 +56,7 @@ export function stageText(stage: string): string {
     probe: t("Lecture du lien", "Reading the link"),
     search: t("Recherche", "Searching"),
     page: t("Lecture de la page", "Reading the page"),
+    chapters: t("Téléchargement des chapitres", "Downloading the chapters"),
     lyrics: t("Recherche des paroles", "Finding the lyrics"),
     copy: t("Copie du fichier", "Copying the file"),
     tools: t("Installation des composants vidéo", "Installing the video components"),

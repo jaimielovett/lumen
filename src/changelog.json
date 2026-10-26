@@ -6,6 +6,24 @@
       "title": { "fr": "Les nouveautés de Lumen 1.3.0", "en": "What's new from Lumen 1.3.0" },
       "items": [
         {
+          "icon": "book",
+          "title": { "fr": "Un livre en une seule leçon", "en": "A book as a single lesson" },
+          "body": {
+            "fr": "En important un EPUB ou un long fichier, choisissez « Une seule leçon » pour garder tout le livre d'un seul tenant, chaque chapitre ouvert par son titre, ou « Par chapitres » pour un livre en plusieurs leçons. Lumen retient votre choix.",
+            "en": "When importing an EPUB or a long file, choose “One lesson” to keep the whole book in one piece, each chapter opening with its title, or “By chapter” for a book in several lessons. Lumen remembers your choice."
+          },
+          "action": "import:file"
+        },
+        {
+          "icon": "globe",
+          "title": { "fr": "Les histoires Wattpad", "en": "Wattpad stories" },
+          "body": {
+            "fr": "Collez le lien d'une histoire Wattpad (ou d'un de ses chapitres) dans Importer › Lien : Lumen télécharge tous ses chapitres gratuits, et vous l'importez en une seule leçon ou par chapitres, avec sa couverture.",
+            "en": "Paste the link of a Wattpad story (or one of its chapters) in Import › Link: Lumen downloads all its free chapters, and you import it as one lesson or by chapter, with its cover."
+          },
+          "action": "import:link"
+        },
+        {
           "icon": "refresh",
           "title": { "fr": "Votre progression sur tous vos appareils", "en": "Your progress on all your devices" },
           "body": {

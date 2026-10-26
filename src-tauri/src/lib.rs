@@ -34,6 +34,7 @@ mod text;
 mod tools;
 mod user;
 mod voice;
+mod wattpad;
 #[cfg(windows)]
 mod vulkan;
 // Whisper dans l'app : iPhone et iPad (essais sur Mac : LUMEN_WHISPER_INAPP=1)

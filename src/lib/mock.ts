@@ -1009,7 +1009,7 @@ export function createMockApi(): Api {
       if (!raw.includes(".")) throw t("Cette adresse n'est pas valide.", "This address isn't valid.");
       const page = /^https?:\/\//.test(raw) ? raw : `https://${raw}`;
       const u = page.toLowerCase();
-      const empty: LinkInfo = { url: page, title: "", site: "", image: "", html: "", media: [], list: false, via: "", note: "" };
+      const empty: LinkInfo = { url: page, title: "", site: "", image: "", html: "", media: [], list: false, via: "", note: "", chapters: [] };
       const day = (i: number) => new Date(Date.now() - i * 7 * 86400e3).toISOString().slice(0, 10);
       const episodes = (show: string): LinkMedia[] =>
         ["The lighthouse keeper", "A night at sea", "Back to the village", "The storm", "Morning fishermen", "Last light"].map((title, i) => ({
@@ -1023,6 +1023,19 @@ export function createMockApi(): Api {
           page,
           collection: show,
         }));
+      if (u.includes("wattpad.com")) {
+        onEvent({ type: "stage", stage: "chapters" });
+        const chapters = [
+          ["La lettre", "Rin trouva la lettre au fond du tiroir. Elle la lut deux fois, puis la reposa.\n\nDehors, la pluie tombait sur la ville endormie."],
+          ["Le matin", "Le café était froid. Personne ne parlait.\n\nElle regarda la fenêtre et pensa au voyage qu'ils n'avaient jamais fait."],
+          ["La gare", "Le train partait à sept heures. Elle avait une valise et un billet.\n\nPour la première fois depuis longtemps, elle souriait."],
+        ];
+        for (let i = 1; i <= chapters.length; i++) {
+          await sleep(300);
+          onEvent({ type: "progress", value: i / chapters.length });
+        }
+        return { ...empty, title: "La lettre", site: "Wattpad · Lumen", chapters: chapters.map(([title, text]) => ({ title, text })) };
+      }
       if (u.includes("spotify") && /track|album|playlist/.test(u)) {
         const songs = ["Clair de lune", "La mer", "Le phare"].map((title) => ({ url: `ytsearch1:${title}`, title: `${title} · Martha`, duration: 214, video: false, direct: false, image: "", date: "", page, collection: "Lumière" }));
         return u.includes("track") ? { ...empty, title: "Clair de lune", site: "Martha", media: songs.slice(0, 1), via: "youtube" } : { ...empty, title: "Lumière", site: "Martha", media: songs, list: true, via: "youtube" };

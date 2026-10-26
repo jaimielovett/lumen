@@ -415,6 +415,8 @@ export interface LinkInfo {
   via: "" | "rss" | "youtube";
   /** à montrer si rien d'autre n'est trouvé */
   note: string;
+  /** une histoire en chapitres (Wattpad) : importée comme un livre */
+  chapters: { title: string; text: string }[];
 }
 
 /** Ce que propose Découvrir : une vidéo, un épisode ou un article d'une source

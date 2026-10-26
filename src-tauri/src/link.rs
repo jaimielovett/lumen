@@ -68,6 +68,15 @@ pub struct LinkInfo {
     pub via: String,
     /// à montrer si rien d'autre n'est trouvé (erreur de yt-dlp sur un site vidéo)
     pub note: String,
+    /// une histoire en chapitres (Wattpad) : importée comme un livre
+    pub chapters: Vec<BookPart>,
+}
+
+/// Un chapitre d'une histoire lue en ligne.
+#[derive(Serialize, Clone, Debug, Default)]
+pub struct BookPart {
+    pub title: String,
+    pub text: String,
 }
 
 /// Un son ou une vidéo à importer.
@@ -281,6 +290,11 @@ pub async fn probe(data_dir: &Path, input: &str, browser: Option<&str>, on_event
     on_event(ImportEvent::Stage { stage: "probe".into() });
     if on_site(&h, &["spotify.com", "spotify.link"]) || h == "spotify.app.link" {
         return spotify(&c, &url).await;
+    }
+    if crate::wattpad::is_wattpad(&h) {
+        if let Some(info) = crate::wattpad::story(&c, &url, on_event).await? {
+            return Ok(info);
+        }
     }
     if on_site(&h, &["podcasts.apple.com", "itunes.apple.com"]) {
         if let Some(info) = apple(&c, &url).await? {

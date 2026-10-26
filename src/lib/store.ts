@@ -47,6 +47,8 @@ export const DEFAULTS: Record<string, string> = {
   // Finder) ; tri de la liste, colonne et sens (« date:desc » : la plus récemment lue d'abord)
   library_view: "large",
   library_sort: "date:desc",
+  // livre ou long fichier importé : une seule leçon ("0" : un livre, chapitre par chapitre)
+  book_whole: "1",
   tts_voice: "0",
   tts_rate: "0.95",
   llm_model: "qwen3.5-2b",
