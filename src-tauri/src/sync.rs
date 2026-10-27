@@ -11,7 +11,9 @@
 //!   supprimée d'un côté après sa dernière lecture disparaît de l'autre ;
 //! - l'activité d'un jour : le plus grand des deux pour chaque compteur (rien n'est
 //!   compté deux fois) ;
-//! - une playlist (même nom, même langue) reçoit les leçons qui lui manquent.
+//! - une playlist (même nom, même langue) reçoit les leçons qui lui manquent ;
+//! - une note se reconnaît à son `uid` : la plus récemment modifiée l'emporte, une
+//!   note supprimée d'un côté après sa dernière modification disparaît de l'autre.
 //! Les conversations du chat et les réglages restent propres à chaque appareil.
 
 use std::collections::{HashMap, HashSet};
@@ -120,6 +122,24 @@ fn merge_attached(live: &mut Connection, media: &dyn Fn(&str) -> Option<String>)
          WHERE excluded.updated_at > terms.updated_at",
         [],
     )? as u64;
+
+    // ---------- notes (une sauvegarde d'avant les notes n'en a pas) ----------
+    let has_notes: bool = tx.query_row("SELECT count(*) FROM o.sqlite_master WHERE type='table' AND name='notes'", [], |r| r.get::<_, i64>(0))? > 0;
+    if has_notes {
+        tx.execute(
+            "DELETE FROM main.notes WHERE EXISTS (SELECT 1 FROM o.tombstones t
+               WHERE t.kind='note' AND t.key = main.notes.uid AND t.at >= main.notes.updated_at)",
+            [],
+        )?;
+        tx.execute(
+            "INSERT INTO main.notes(uid,lang,title,body,created_at,updated_at)
+             SELECT x.uid, x.lang, x.title, x.body, x.created_at, x.updated_at FROM o.notes x
+             WHERE NOT EXISTS (SELECT 1 FROM main.tombstones t WHERE t.kind='note' AND t.key = x.uid AND t.at >= x.updated_at)
+             ON CONFLICT(uid) DO UPDATE SET title=excluded.title, body=excluded.body, updated_at=excluded.updated_at
+             WHERE excluded.updated_at > notes.updated_at",
+            [],
+        )?;
+    }
 
     // ---------- activité : le plus grand des deux, jour par jour ----------
     tx.execute(
@@ -405,6 +425,30 @@ mod tests {
         let (r3, _) = merge(&mut phone, &mac_p, &media).unwrap();
         assert!(r3.is_empty(), "{r3:?}");
         for p in [mac_p, phone_p] {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+
+    #[test]
+    fn notes_travel_between_devices() {
+        let (mac_p, mut mac) = base("notes-mac");
+        let (pc_p, mut pc) = base("notes-pc");
+        let verbs = db::note_create(&mac, "tl", "Pandiwa", "um-, mag-, -in").unwrap();
+        let words = db::note_create(&mac, "tl", "Mga salita", "umaga, gabi").unwrap();
+        mac.execute("UPDATE notes SET created_at=100, updated_at=100", []).unwrap();
+        merge(&mut pc, &mac_p, &|_| None).unwrap();
+        // sur le PC, plus tard : une note complétée ; sur le Mac, l'autre supprimée
+        pc.execute("UPDATE notes SET body='um-, mag-, -in, i-', updated_at=200 WHERE title='Pandiwa'", []).unwrap();
+        db::note_delete(&mac, words.id).unwrap();
+        merge(&mut pc, &mac_p, &|_| None).unwrap();
+        merge(&mut mac, &pc_p, &|_| None).unwrap();
+        for c in [&mac, &pc] {
+            let notes = db::notes_list(c, "tl").unwrap();
+            assert_eq!(notes.len(), 1);
+            assert_eq!((notes[0].title.as_str(), notes[0].body.as_str()), ("Pandiwa", "um-, mag-, -in, i-"));
+        }
+        assert_eq!(db::notes_list(&mac, "tl").unwrap()[0].id, verbs.id);
+        for p in [&mac_p, &pc_p] {
             let _ = std::fs::remove_file(p);
         }
     }

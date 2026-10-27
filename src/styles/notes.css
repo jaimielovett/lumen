@@ -1,0 +1,80 @@
+/* ==========================================================================
+   Notes : le carnet de chaque langue. La liste et l'en-tête sont ceux du chat
+   (chat.css) ; ici, la page où l'on écrit, dans la police de lecture.
+   ========================================================================== */
+
+.notes-title {
+  border-bottom-color: transparent;
+  transition: border-color 0.2s;
+}
+.notes-title:focus {
+  border-bottom-color: var(--light-strong);
+}
+.notes-title::placeholder {
+  color: var(--faint);
+}
+
+.notes-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  max-width: 824px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 4px 32px 18px;
+}
+
+/* la page : un filet de lumière dans la marge, comme un trait de crayon doré */
+.notes-body {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  resize: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-read);
+  font-size: 18px;
+  line-height: 1.7;
+  padding: 10px 0 10px 22px;
+  border-left: 1px solid var(--light-soft);
+  caret-color: var(--light-strong);
+  transition: border-color 0.3s;
+}
+.notes-body:focus {
+  border-left-color: var(--light-strong);
+}
+.notes-body::placeholder {
+  color: var(--faint);
+  font-style: italic;
+}
+.notes-body::selection {
+  background: var(--light-soft);
+}
+
+.notes-foot {
+  padding: 10px 0 0 22px;
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.notes-welcome .btn {
+  margin-top: 8px;
+}
+
+/* iPhone : une longue première ligne s'écourte (« … ») au lieu d'élargir la colonne */
+:root.compact .notes-view .chat-side {
+  min-width: 0;
+}
+:root.compact .notes-page {
+  padding: 0 16px calc(12px + var(--safe-bottom, 0px));
+}
+:root.compact .notes-body {
+  font-size: 17px;
+  padding-left: 14px;
+}
+:root.compact .notes-foot {
+  padding-left: 14px;
+}

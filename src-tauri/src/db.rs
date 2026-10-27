@@ -147,6 +147,21 @@ pub fn open(path: &Path) -> Result<Connection> {
         "#,
     )?;
     ensure_uids(&conn)?;
+    // notes de l'apprenant, un carnet par langue ; `uid` les reconnaît d'un appareil à l'autre
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS notes(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid TEXT NOT NULL UNIQUE,
+            lang TEXT NOT NULL,
+            title TEXT NOT NULL DEFAULT '',
+            body TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS notes_lang ON notes(lang, updated_at);
+        "#,
+    )?;
     // progrès : temps actif passé dans les leçons, et jours où l'objectif est atteint (série)
     add_column(&conn, "activity", "learn_secs", "INTEGER NOT NULL DEFAULT 0")?;
     if add_column(&conn, "activity", "goal_met", "INTEGER NOT NULL DEFAULT 0")? {
@@ -980,6 +995,60 @@ pub fn chat_update(c: &Connection, id: i64, p: &ChatPatch) -> Result<()> {
 
 pub fn chat_delete(c: &Connection, id: i64) -> Result<()> {
     c.execute("DELETE FROM chats WHERE id=?1", [id])?;
+    Ok(())
+}
+
+// ---------- notes ----------
+
+/// Une note du carnet d'une langue.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct Note {
+    pub id: i64,
+    pub lang: String,
+    pub title: String,
+    pub body: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+fn row_note(r: &rusqlite::Row) -> rusqlite::Result<Note> {
+    Ok(Note { id: r.get(0)?, lang: r.get(1)?, title: r.get(2)?, body: r.get(3)?, created_at: r.get(4)?, updated_at: r.get(5)? })
+}
+
+/// Les notes d'une langue, la plus récemment modifiée d'abord.
+pub fn notes_list(c: &Connection, lang: &str) -> Result<Vec<Note>> {
+    let mut st = c.prepare("SELECT id,lang,title,body,created_at,updated_at FROM notes WHERE lang=?1 ORDER BY updated_at DESC, id DESC")?;
+    let out = st.query_map([lang], row_note)?.collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(out)
+}
+
+/// Identifiant d'une note, le même sur tous les appareils (tiré au hasard).
+fn note_uid() -> String {
+    let mut b = [0u8; 12];
+    getrandom::fill(&mut b).expect("générateur aléatoire du système");
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+pub fn note_create(c: &Connection, lang: &str, title: &str, body: &str) -> Result<Note> {
+    let t = now();
+    c.execute(
+        "INSERT INTO notes(uid,lang,title,body,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?5)",
+        params![note_uid(), lang, title, body, t],
+    )?;
+    Ok(c.query_row("SELECT id,lang,title,body,created_at,updated_at FROM notes WHERE id=?1", [c.last_insert_rowid()], row_note)?)
+}
+
+pub fn note_update(c: &Connection, id: i64, title: &str, body: &str) -> Result<Note> {
+    c.execute("UPDATE notes SET title=?2, body=?3, updated_at=?4 WHERE id=?1", params![id, title, body, now()])?;
+    Ok(c.query_row("SELECT id,lang,title,body,created_at,updated_at FROM notes WHERE id=?1", [id], row_note)?)
+}
+
+/// Supprime une note, et en laisse la trace pour que les autres appareils la suppriment aussi.
+pub fn note_delete(c: &Connection, id: i64) -> Result<()> {
+    if let Ok(uid) = c.query_row("SELECT uid FROM notes WHERE id=?1", [id], |r| r.get::<_, String>(0)) {
+        tombstone(c, "note", &uid)?;
+    }
+    c.execute("DELETE FROM notes WHERE id=?1", [id])?;
     Ok(())
 }
 

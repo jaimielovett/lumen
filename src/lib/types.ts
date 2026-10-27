@@ -285,6 +285,16 @@ export interface WordAnswer {
 }
 
 /** Conversation du chat. */
+/** Une note du carnet d'une langue (miroir de `db::Note`). */
+export interface Note {
+  id: number;
+  lang: LangCode;
+  title: string;
+  body: string;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface ChatSummary {
   id: number;
   lang: LangCode;

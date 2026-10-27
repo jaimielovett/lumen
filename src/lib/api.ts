@@ -10,6 +10,7 @@ import type {
   ChatPatch,
   ChatReply,
   ChatSummary,
+  Note,
   ChatThread,
   CreatedBook,
   DeviceInfo,
@@ -135,6 +136,10 @@ export interface Api {
   chatCreate(lang: LangCode, lesson: number | null): Promise<ChatSummary>;
   chatUpdate(id: number, patch: ChatPatch): Promise<ChatSummary>;
   chatDelete(id: number): Promise<void>;
+  notesList(lang: LangCode): Promise<Note[]>;
+  noteCreate(lang: LangCode, title: string, body: string): Promise<Note>;
+  noteUpdate(id: number, title: string, body: string): Promise<Note>;
+  noteDelete(id: number): Promise<void>;
   /** pose une question : la réflexion puis la réponse arrivent au fil de l'eau */
   chatSend(id: number, text: string, options: ChatOptions, onEvent: (e: ChatEvent) => void): Promise<ChatReply>;
   /** arrête la réponse en cours (ce qui est écrit est gardé) */
@@ -286,6 +291,10 @@ async function createTauriApi(): Promise<Api> {
     chatCreate: (lang, lesson) => invoke("chat_create", { lang, lesson }),
     chatUpdate: (id, patch) => invoke("chat_update", { id, patch }),
     chatDelete: (id) => invoke("chat_delete", { id }),
+    notesList: (lang) => invoke("notes_list", { lang }),
+    noteCreate: (lang, title, body) => invoke("note_create", { lang, title, body }),
+    noteUpdate: (id, title, body) => invoke("note_update", { id, title, body }),
+    noteDelete: (id) => invoke("note_delete", { id }),
     chatSend: (id, text, options, onEvent) => invoke("chat_send", { id, text, options, onEvent: ch<ChatEvent>(onEvent) }),
     chatStop: (id) => invoke("model_cancel", { id: `chat:${id}` }),
     modelsList: () => invoke("models_list"),

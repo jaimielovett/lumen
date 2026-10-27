@@ -15,6 +15,7 @@ import type {
   BackupStatus,
   ChatMessage,
   ChatSummary,
+  Note,
   DayStat,
   DiscoverItem,
   GoalReached,
@@ -43,6 +44,7 @@ interface Db {
   installed: string[];
   playlists?: Playlist[];
   chats?: (Omit<ChatSummary, "lesson_title" | "count" | "preview"> & { messages: ChatMessage[] })[];
+  notes?: Note[];
   backup?: { last_at: number | null; size: number };
 }
 
@@ -903,6 +905,28 @@ export function createMockApi(): Api {
     },
     async chatDelete(id) {
       db.chats = chats().filter((c) => c.id !== id);
+      commit();
+    },
+    async notesList(lang) {
+      return (db.notes ?? []).filter((n) => n.lang === lang).sort((a, b) => b.updated_at - a.updated_at || b.id - a.id);
+    },
+    async noteCreate(lang, title, body) {
+      const notes = (db.notes ??= []);
+      const at = Math.floor(Date.now() / 1000);
+      const note: Note = { id: Math.max(0, ...notes.map((n) => n.id)) + 1, lang, title, body, created_at: at, updated_at: at };
+      notes.push(note);
+      commit();
+      return { ...note };
+    },
+    async noteUpdate(id, title, body) {
+      const note = (db.notes ?? []).find((n) => n.id === id);
+      if (!note) throw t("Cette note n'existe plus.", "This note no longer exists.");
+      Object.assign(note, { title, body, updated_at: Math.floor(Date.now() / 1000) });
+      commit();
+      return { ...note };
+    },
+    async noteDelete(id) {
+      db.notes = (db.notes ?? []).filter((n) => n.id !== id);
       commit();
     },
     async chatSend(id, text, options, onEvent) {

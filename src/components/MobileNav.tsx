@@ -22,7 +22,7 @@ import { CountUp } from "./ui";
  * iPhone : la barre latérale du Mac devient une barre d'onglets en verre, posée
  * en bas de l'écran (à portée du pouce), avec l'import au centre, une lumière.
  * La leçon en cours flotte au-dessus dans une capsule, comme le mini-lecteur de
- * Musique ; « Plus » ouvre le reste (playlists, chat, vocabulaire, réglages, langue).
+ * Musique ; « Plus » ouvre le reste (playlists, chat, vocabulaire, notes, réglages, langue).
  * Dans une leçon, tout s'efface : la lecture prend l'écran.
  */
 
@@ -50,7 +50,7 @@ const tabs = (): Tab[] => [
 ];
 
 /** Vues rangées sous « Plus » : l'onglet s'allume quand on y est. */
-const MORE: View[] = ["playlists", "chat", "vocab", "settings"];
+const MORE: View[] = ["playlists", "chat", "vocab", "notes", "settings"];
 
 export function MobileNav() {
   const view = useApp((s) => s.view);
@@ -201,6 +201,7 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose(): void }) {
     { view: "playlists", label: "Playlists", icon: "playlist", run: () => openPlaylist(null) },
     { view: "chat", label: "Chat", icon: "chat", run: () => go("chat") },
     { view: "vocab", label: t("Vocabulaire", "Vocabulary"), icon: "cards", run: () => go("vocab") },
+    { view: "notes", label: t("Notes", "Notes"), icon: "note", run: () => go("notes") },
     { view: "settings", label: t("Réglages", "Settings"), icon: "settings", run: () => openSettings() },
   ];
 

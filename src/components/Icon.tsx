@@ -6,6 +6,7 @@ const P: Record<string, string> = {
   library: "M4 5h4v14H4z M10 5h4v14h-4z M16.2 6.2l3.4-.9 2.6 12.8-3.4.9z",
   book: "M3 6c3-1.2 6-1.2 9 1 3-2.2 6-2.2 9-1v12c-3-1-6-1-9 1-3-2-6-2-9-1z M12 7v12",
   cards: "M4 8h16v11H4z M7 5h10",
+  note: "M6.5 3.5h9.5l2.5 2.5v14.5h-12z M9.5 9h6 M9.5 12.5h6 M9.5 16h3.5",
   // présentations de la bibliothèque : grandes cartes, petites cartes, liste
   bigcards: "M3.5 4.5h7.5v6.5H3.5z M13 4.5h7.5v6.5H13z M3.5 14.5h7.5 M3.5 18h4.5 M13 14.5h7.5 M13 18h4.5",
   smallcards: "M3.5 5h4.6v4.6H3.5z M9.7 5h4.6v4.6H9.7z M15.9 5h4.6v4.6h-4.6z M3.5 14.4h4.6V19H3.5z M9.7 14.4h4.6V19H9.7z M15.9 14.4h4.6V19h-4.6z",

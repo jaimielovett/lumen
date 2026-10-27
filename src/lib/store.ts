@@ -5,7 +5,7 @@ import type { AppInfo, DiscoverItem, DownloadEvent, LangCode, ModelRow, Streak }
 import { LOOK_DEFAULTS } from "./reading";
 import { STARTERS, starterCollection } from "./langs";
 
-export type View = "library" | "discover" | "playlists" | "reader" | "chat" | "vocab" | "progress" | "settings";
+export type View = "library" | "discover" | "playlists" | "reader" | "chat" | "vocab" | "notes" | "progress" | "settings";
 
 /** Catégories des Réglages, chacune sur sa propre page. */
 export type SettingsTab = "profile" | "general" | "langs" | "reading" | "voice" | "discover" | "podcasts" | "ai" | "videos" | "backup" | "storage" | "lingq" | "about";

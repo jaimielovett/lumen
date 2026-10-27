@@ -706,6 +706,28 @@ pub async fn chat_delete(state: State<'_, AppState>, id: i64) -> R<()> {
     db::chat_delete(&state.db.lock(), id).map_err(err)
 }
 
+// ---------- notes ----------
+
+#[tauri::command]
+pub async fn notes_list(state: State<'_, AppState>, lang: String) -> R<Vec<db::Note>> {
+    db::notes_list(&state.db.lock(), &lang).map_err(err)
+}
+
+#[tauri::command]
+pub async fn note_create(state: State<'_, AppState>, lang: String, title: String, body: String) -> R<db::Note> {
+    db::note_create(&state.db.lock(), &lang, &title, &body).map_err(err)
+}
+
+#[tauri::command]
+pub async fn note_update(state: State<'_, AppState>, id: i64, title: String, body: String) -> R<db::Note> {
+    db::note_update(&state.db.lock(), id, &title, &body).map_err(err)
+}
+
+#[tauri::command]
+pub async fn note_delete(state: State<'_, AppState>, id: i64) -> R<()> {
+    db::note_delete(&state.db.lock(), id).map_err(err)
+}
+
 /// Pose une question au chat. La réflexion (si elle est demandée) puis la
 /// réponse arrivent au fil de l'eau ; la question et la réponse sont
 /// enregistrées à la fin. Annulable avec `model_cancel("chat:<id>")` : ce qui

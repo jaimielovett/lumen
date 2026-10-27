@@ -1,10 +1,19 @@
 {
-  "_lisezmoi": "Nouveautés montrées après chaque mise à jour (components/News.tsx) et notes de publication. Ajouter ce qui change sous la version \"next\" au fil du travail ; « Publier une version » lui donne son numéro et sa date. Icônes : noms de components/Icon.tsx. Actions : \"tour\" (visite guidée), \"guide\", \"settings:<page>\" (profile, general, langs, reading, voice, discover, podcasts, ai, videos, backup, storage, lingq, about), \"import:<onglet>\" (text, link, file, media, podcast), \"view:<vue>\" (library, discover, playlists, chat, vocab, progress).",
+  "_lisezmoi": "Nouveautés montrées après chaque mise à jour (components/News.tsx) et notes de publication. Ajouter ce qui change sous la version \"next\" au fil du travail ; « Publier une version » lui donne son numéro et sa date. Icônes : noms de components/Icon.tsx. Actions : \"tour\" (visite guidée), \"guide\", \"settings:<page>\" (profile, general, langs, reading, voice, discover, podcasts, ai, videos, backup, storage, lingq, about), \"import:<onglet>\" (text, link, file, media, podcast), \"view:<vue>\" (library, discover, playlists, chat, vocab, notes, progress).",
   "releases": [
     {
       "version": "next",
-      "title": { "fr": "Des transcriptions qui vont jusqu'au bout", "en": "Transcripts that make it to the end" },
+      "title": { "fr": "Un carnet de notes, des transcriptions qui vont jusqu'au bout", "en": "A notebook, and transcripts that make it to the end" },
       "items": [
+        {
+          "icon": "note",
+          "title": { "fr": "Un carnet de notes pour chaque langue", "en": "A notebook for each language" },
+          "body": {
+            "fr": "Notes, dans la barre latérale (⌘7) : gardez une règle de grammaire, une expression entendue ou les mots qui résistent. Chaque langue a son carnet, tout s'enregistre en écrivant, et vos notes suivent votre progression dans la sauvegarde et d'un appareil à l'autre.",
+            "en": "Notes, in the sidebar (⌘7): keep a grammar rule, a phrase you heard or the words that won't stick. Each language has its own notebook, everything saves as you type, and your notes follow your progress in the backup and from one device to another."
+          },
+          "action": "view:notes"
+        },
         {
           "icon": "wave",
           "title": { "fr": "Plus de transcription interrompue sans explication", "en": "No more transcripts stopping without explanation" },

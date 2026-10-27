@@ -40,7 +40,7 @@ function groups(): { title: string; rows: Row[] }[] {
         { keys: [isWindows ? [M, shift, "N"] : [shift, M, "N"]], label: t("Nouvelle conversation", "New conversation") },
         { keys: [[M, "F"]], label: t("Rechercher", "Search") },
         { keys: [[M, "R"]], label: t("Reprendre la lecture", "Resume reading") },
-        { keys: [[M, "1…6"]], label: t("Bibliothèque, Découvrir… jusqu'à Progrès", "Library, Discover… up to Progress") },
+        { keys: [[M, "1…7"]], label: t("Bibliothèque, Découvrir… jusqu'à Progrès, puis Notes", "Library, Discover… up to Progress, then Notes") },
         { keys: [[M, "S"]], label: t("Sauvegarder la progression", "Back up progress") },
         { keys: [[M, ","]], label: t("Réglages", "Settings") },
         ...(isWindows ? [{ keys: [[M, "/"]], label: t("Raccourcis clavier", "Keyboard shortcuts") }] : []),

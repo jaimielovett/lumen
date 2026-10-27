@@ -352,6 +352,7 @@ function viewMenu(s: Snap): SubmenuOptions {
     ["chat", t("Chat", "Chat"), "4"],
     ["vocab", t("Vocabulaire", "Vocabulary"), "5"],
     ["progress", t("Progrès", "Progress"), "6"],
+    ["notes", t("Notes", "Notes"), "7"],
   ];
   const { theme, reader_sidebar: sidebar, library_view: shelf } = s.look;
   const shelves: [string, string][] = [
@@ -589,11 +590,11 @@ export function useAppMenu() {
 
 // ---------- Windows : les raccourcis sans la barre des menus ----------
 
-const VIEW_KEYS: View[] = ["library", "discover", "playlists", "chat", "vocab", "progress"];
+const VIEW_KEYS: View[] = ["library", "discover", "playlists", "chat", "vocab", "progress", "notes"];
 
 /**
  * Sous Windows, pas de barre des menus : ses raccourcis passent par Ctrl
- * (Ctrl+N, Ctrl+O, Ctrl+1 à 6…), F11 pour le plein écran, Ctrl+B pour la barre
+ * (Ctrl+N, Ctrl+O, Ctrl+1 à 7…), F11 pour le plein écran, Ctrl+B pour la barre
  * latérale d'une leçon, Ctrl+I pour son panneau du mot (à droite ou flottant). Les chiffres se lisent à leur place sur le clavier
  * (`code`) : sur un clavier AZERTY, Ctrl+1 se tape sans Maj. Les raccourcis du
  * navigateur (recharger, imprimer, chercher dans la page) n'ont pas leur place
@@ -635,7 +636,7 @@ export function useWindowsKeys() {
       if (key === "=" || key === "+" || e.code === "NumpadAdd") return run(() => setSize((v) => v + 1));
       if (key === "-" || e.code === "NumpadSubtract") return run(() => setSize((v) => v - 1));
       if (e.code === "Digit0" || e.code === "Numpad0") return run(() => setSize(() => Number(LOOK_DEFAULTS.font_size)));
-      const digit = /^(?:Digit|Numpad)([1-6])$/.exec(e.code);
+      const digit = /^(?:Digit|Numpad)([1-7])$/.exec(e.code);
       if (digit) return run(() => app.go(VIEW_KEYS[Number(digit[1]) - 1]));
       if (e.shiftKey) return;
       switch (key) {
