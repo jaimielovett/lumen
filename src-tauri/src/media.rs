@@ -941,6 +941,9 @@ async fn run_ytdlp_once(
     on_progress: &mut (dyn FnMut(f64) + Send),
 ) -> Result<Vec<String>> {
     let mut cmd = crate::proc::tokio_command(ytdlp);
+    // sa sortie en UTF-8 : sous Windows, yt-dlp écrit sinon dans la page de code du
+    // système (cp1252) et un titre à guillemets courbes (“may”) devient illisible
+    cmd.env("PYTHONIOENCODING", "utf-8").env("PYTHONUTF8", "1");
     cmd.args(["--no-playlist", "--newline", "--progress", "--no-colors"]);
     // Windows : les certificats du système, pas ceux que yt-dlp emporte (un antivirus
     // qui inspecte les connexions, comme Avast, n'est reconnu que par Windows)
@@ -960,9 +963,9 @@ async fn run_ytdlp_once(
     let stdout = child.stdout.take().ok_or_else(|| anyhow!(crate::i18n::t("sortie indisponible", "output unavailable")))?;
     let stderr = child.stderr.take().ok_or_else(|| anyhow!(crate::i18n::t("sortie indisponible", "output unavailable")))?;
     let err_task = tokio::spawn(async move {
-        let mut lines = BufReader::new(stderr).lines();
+        let mut err = BufReader::new(stderr);
         let mut last = Vec::new();
-        while let Ok(Some(l)) = lines.next_line().await {
+        while let Ok(Some(l)) = lossy_line(&mut err).await {
             last.push(l);
             if last.len() > 30 {
                 last.remove(0);
@@ -971,8 +974,8 @@ async fn run_ytdlp_once(
         last
     });
     let mut out = Vec::new();
-    let mut lines = BufReader::new(stdout).lines();
-    while let Some(line) = lines.next_line().await? {
+    let mut reader = BufReader::new(stdout);
+    while let Some(line) = lossy_line(&mut reader).await? {
         if let Some(rest) = line.trim().strip_prefix("LUMEN") {
             if let Ok(v) = rest.trim().trim_end_matches('%').trim().parse::<f64>() {
                 on_progress(v);
@@ -988,6 +991,19 @@ async fn run_ytdlp_once(
         return Err(anyhow!("{}", msg.trim_start_matches("ERROR: ").trim()));
     }
     Ok(out)
+}
+
+/// Une ligne de la sortie d'un programme, même si elle n'est pas en UTF-8 valide : un
+/// caractère illisible devient « � » au lieu d'interrompre tout l'import.
+async fn lossy_line<R: tokio::io::AsyncBufRead + Unpin>(r: &mut R) -> std::io::Result<Option<String>> {
+    let mut buf = Vec::new();
+    if r.read_until(b'\n', &mut buf).await? == 0 {
+        return Ok(None);
+    }
+    while matches!(buf.last(), Some(b'\n' | b'\r')) {
+        buf.pop();
+    }
+    Ok(Some(String::from_utf8_lossy(&buf).into_owned()))
 }
 
 fn needs_cookies(e: &anyhow::Error) -> bool {
@@ -1206,6 +1222,17 @@ pub fn new_stem() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn reads_lines_that_are_not_utf8() {
+        // titre écrit par yt-dlp dans la page de code de Windows : guillemets courbes cp1252
+        let raw: &[u8] = b"#11 - Ano ang kaibahan ng \x93may\x94 at \x93meron\x94\r\nLUMEN 42.0%\n";
+        let mut r = tokio::io::BufReader::new(raw);
+        let first = lossy_line(&mut r).await.unwrap().unwrap();
+        assert!(first.starts_with("#11 - Ano ang kaibahan ng ") && first.contains("may") && !first.ends_with('\r'));
+        assert_eq!(lossy_line(&mut r).await.unwrap().as_deref(), Some("LUMEN 42.0%"));
+        assert_eq!(lossy_line(&mut r).await.unwrap(), None);
+    }
 
     #[cfg(not(target_os = "ios"))]
     #[test]
