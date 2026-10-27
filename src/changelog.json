@@ -15,6 +15,23 @@
           "action": "view:notes"
         },
         {
+          "icon": "speaker",
+          "title": { "fr": "Le mot tel qu'il est dit", "en": "The word as it is spoken" },
+          "body": {
+            "fr": "Dans une leçon audio ou vidéo, toucher un mot (ou surligner quelques mots) fait entendre ce passage dans l'enregistrement lui-même, avec la vraie voix, au lieu d'une voix de synthèse. Puis la leçon revient là où vous en étiez.",
+            "en": "In an audio or video lesson, tapping a word (or highlighting a few) plays that bit of the recording itself, in the real voice, instead of a synthetic one. Then the lesson goes back to where you were."
+          }
+        },
+        {
+          "icon": "ffwd",
+          "title": { "fr": "Les playlists s'enchaînent, ou pas", "en": "Playlists that continue, or not" },
+          "body": {
+            "fr": "Un nouveau bouton dans le bandeau de la playlist, en haut de la leçon, décide si la leçon suivante s'ouvre d'elle-même à la fin de l'écoute. Coupé, elle s'annonce et vous attend : le temps de terminer la leçon. Aussi dans Réglages › Lecture et le menu Leçon.",
+            "en": "A new button in the playlist strip, at the top of the lesson, decides whether the next lesson opens by itself when playback ends. Off, it's announced and waits for you: time to finish the lesson. Also in Settings › Reading and the Lesson menu."
+          },
+          "action": "settings:reading"
+        },
+        {
           "icon": "wave",
           "title": { "fr": "Plus de transcription interrompue sans explication", "en": "No more transcripts stopping without explanation" },
           "body": {

@@ -40,6 +40,8 @@ export const DEFAULTS: Record<string, string> = {
   finish_marks_known: "1",
   // la page tourne quand l'audio ou la voix passe à la suivante ("0" : elle reste où l'on lit)
   auto_turn: "1",
+  // playlist : à la fin d'une leçon, la suivante s'ouvre d'elle-même après 8 s ("0" : elle attend un clic)
+  playlist_autonext: "1",
   reader_sidebar: "1",
   // la vidéo d'une leçon vidéo au-dessus du texte ("0" : fermée, le son continue)
   video_show: "1",

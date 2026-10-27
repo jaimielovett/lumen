@@ -51,6 +51,8 @@ export interface LessonActions {
   panel(): void;
   /** playlist suivie : en boucle ou non */
   loop(): void;
+  /** playlist suivie : la leçon suivante s'ouvre d'elle-même ou attend un clic */
+  autoNext(): void;
 }
 
 interface MenuState {
@@ -250,7 +252,7 @@ function sub(text: string, items: Item[], enabled = true): SubmenuOptions {
   return { text, items, enabled };
 }
 
-const LOOK_KEYS = ["read_font", "read_paper", "font_size", "line_height", "read_width", "reader_layout", "word_style", "word_panel", "theme", "reader_sidebar", "auto_turn", "media_rate", "tts_rate", "library_view", "video_show"] as const;
+const LOOK_KEYS = ["read_font", "read_paper", "font_size", "line_height", "read_width", "reader_layout", "word_style", "word_panel", "theme", "reader_sidebar", "auto_turn", "media_rate", "tts_rate", "library_view", "video_show", "playlist_autonext"] as const;
 
 /** Ce dont le menu dépend : il n'est refait que si cela change. */
 function snapshot() {
@@ -507,6 +509,7 @@ function lessonMenu(s: Snap): SubmenuOptions {
     sep,
     act(t("Ajouter à une playlist…", "Add to a Playlist…"), onLesson((a) => a.playlist()), { on }),
     pick(t("Lire la playlist en boucle", "Loop Playlist"), !!l?.loop, onLesson((a) => a.loop()), { on: on && l?.loop != null }),
+    pick(t("Enchaîner la leçon suivante", "Play Next Lesson Automatically"), s.look.playlist_autonext !== "0", onLesson((a) => a.autoNext()), { on }),
     act(t("Choisir une couverture…", "Choose a Cover…"), onLesson((a) => a.cover()), { on }),
     sep,
     act(t("Supprimer la leçon…", "Delete Lesson…"), onLesson((a) => a.remove()), { on }),

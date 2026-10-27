@@ -70,8 +70,22 @@ export async function toggleLoop(pl: Playlist) {
 }
 
 /** Au centre de la barre du haut : la playlist, la place de la leçon, précédente et suivante. */
+/** Enchaîner ou non la leçon suivante à la fin de l'écoute (toutes les playlists). */
+export function toggleAutoNext() {
+  const app = useApp.getState();
+  const on = app.settings.playlist_autonext === "0";
+  void app.setSetting("playlist_autonext", on ? "1" : "0");
+  app.toast(
+    on
+      ? t("La leçon suivante s'ouvrira d'elle-même à la fin de l'écoute", "The next lesson will open by itself when playback ends")
+      : t("À la fin de l'écoute, la leçon suivante attendra votre clic", "When playback ends, the next lesson will wait for your click"),
+    "light",
+  );
+}
+
 export function PlaylistStrip({ pl, lessonId, playing }: { pl: Playlist; lessonId: number; playing(): boolean }) {
   const openLesson = useApp((s) => s.openLesson);
+  const autoNext = useApp((s) => s.settings.playlist_autonext !== "0");
   const openPlaylist = useApp((s) => s.openPlaylist);
   const i = pl.lessons.indexOf(lessonId);
   const prev = pl.lessons[i - 1];
@@ -108,6 +122,19 @@ export function PlaylistStrip({ pl, lessonId, playing }: { pl: Playlist; lessonI
       >
         <Icon name="right" size={16} />
       </button>
+      <button
+        className={`icon-btn pl-strip-loop ${autoNext ? "on" : ""}`}
+        onClick={toggleAutoNext}
+        aria-pressed={autoNext}
+        aria-label={book ? t("Enchaîner le chapitre suivant", "Play the next chapter automatically") : t("Enchaîner la leçon suivante", "Play the next lesson automatically")}
+        title={
+          autoNext
+            ? t("Enchaîné : à la fin de l'écoute, la suite s'ouvre d'elle-même", "Continuous: when playback ends, the next one opens by itself")
+            : t("Pas enchaîné : à la fin de l'écoute, la suite attend votre clic", "Not continuous: when playback ends, the next one waits for your click")
+        }
+      >
+        <Icon name="ffwd" size={15} />
+      </button>
       {!book && (
         <button
           className={`icon-btn pl-strip-loop ${pl.looping ? "on" : ""}`}
@@ -128,13 +155,15 @@ const UP_NEXT_SECS = 8;
 
 /**
  * Fin d'une leçon dans une playlist : la suivante s'annonce, un anneau de
- * lumière se remplit, puis elle s'ouvre et sa lecture démarre.
+ * lumière se remplit, puis elle s'ouvre et sa lecture démarre. `auto` faux
+ * (enchaînement coupé) : la carte attend un clic, le temps de terminer la leçon.
  */
-export function UpNext({ next, onGo, onCancel }: { next: LessonSummary; onGo(): void; onCancel(): void }) {
+export function UpNext({ next, auto, onGo, onCancel }: { next: LessonSummary; auto: boolean; onGo(): void; onCancel(): void }) {
   const [left, setLeft] = useState(UP_NEXT_SECS);
   const goRef = useRef(onGo);
   goRef.current = onGo;
   useEffect(() => {
+    if (!auto) return;
     const t0 = performance.now();
     const id = window.setInterval(() => {
       const l = UP_NEXT_SECS - (performance.now() - t0) / 1000;
@@ -144,7 +173,7 @@ export function UpNext({ next, onGo, onCancel }: { next: LessonSummary; onGo(): 
       } else setLeft(Math.ceil(l));
     }, 200);
     return () => window.clearInterval(id);
-  }, []);
+  }, [auto]);
   const r = 21;
   return (
     <motion.div
@@ -159,13 +188,14 @@ export function UpNext({ next, onGo, onCancel }: { next: LessonSummary; onGo(): 
         <Cover lesson={next} bare />
       </span>
       <span className="up-body">
-        <span className="eyebrow num">{t(`Ensuite, dans ${left} s`, `Up next, in ${left} s`)}</span>
+        <span className="eyebrow num">{auto ? t(`Ensuite, dans ${left} s`, `Up next, in ${left} s`) : t("Ensuite", "Up next")}</span>
         <strong>{next.title}</strong>
       </span>
       <button className="up-go" onClick={onGo} aria-label={t(`Lire maintenant : ${next.title}`, `Play now: ${next.title}`)} title={t("Lire maintenant", "Play now")}>
         <svg className="up-ring" viewBox="0 0 48 48" aria-hidden="true">
           <circle cx="24" cy="24" r={r} className="ring-bg" />
-          <motion.circle
+          {auto && (
+            <motion.circle
             cx="24"
             cy="24"
             r={r}
@@ -173,7 +203,8 @@ export function UpNext({ next, onGo, onCancel }: { next: LessonSummary; onGo(): 
             initial={{ pathLength: 0 }}
             animate={{ pathLength: 1 }}
             transition={{ duration: UP_NEXT_SECS, ease: "linear" }}
-          />
+            />
+          )}
         </svg>
         <Icon name="play" size={16} />
       </button>

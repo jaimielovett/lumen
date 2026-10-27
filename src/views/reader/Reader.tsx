@@ -21,7 +21,7 @@ import { confirmAsk } from "../../lib/dialogs";
 import { useLessonMenu, useMenu } from "../../lib/menu";
 import { AddToPlaylist } from "../../components/AddToPlaylist";
 import { DisplayMenu } from "./Display";
-import { PlaylistStrip, UpNext, toggleLoop, usePlaylist } from "./PlaylistBar";
+import { PlaylistStrip, UpNext, toggleAutoNext, toggleLoop, usePlaylist } from "./PlaylistBar";
 import { AsideTabs, ReaderChat, type AsideTab } from "./ReaderChat";
 import { VideoStage } from "./VideoStage";
 import { WordFloat } from "./WordFloat";
@@ -300,8 +300,10 @@ export function Reader() {
       void api().playlistUpdate(pl.id, { current: 0 });
       return;
     }
-    // en boucle, une playlist d'une seule leçon la reprend aussitôt (réécouter, c'est relire)
+    // en boucle, une playlist d'une seule leçon la reprend aussitôt (réécouter, c'est relire),
+    // sauf si l'enchaînement est coupé : on reste sur la leçon finie
     if (nextId === lesson.id) {
+      if (useApp.getState().settings.playlist_autonext === "0") return;
       readToks.current = new Uint8Array(readToks.current.length);
       playerRef.current?.restart();
       return;
@@ -642,6 +644,8 @@ export function Reader() {
         // sélection fermée ou changée entre-temps, ou leçon relancée : rien à dire
         if (delay && (r?.a !== a || r?.b !== b)) return;
         if (playerRef.current?.isPlaying()) return;
+        // une leçon avec son ou vidéo minutés : le mot tel qu'il y est dit, pas une voix de synthèse
+        if (playerRef.current?.playClip(a, b)) return;
         const text = lesson.text.slice(tokens[a].s, tokens[b].e).replace(/\s+/g, " ").trim();
         if (text) void pronounce(text, lesson.lang, settings[`voice_${lesson.lang}`], true);
       };
@@ -1122,6 +1126,7 @@ export function Reader() {
     remove: () => void removeLesson(),
     panel: () => togglePanel(),
     loop: () => pl && void toggleLoop(pl),
+    autoNext: toggleAutoNext,
   });
 
   // le chat cadre l'extrait des longues leçons sur la page lue
@@ -1762,6 +1767,7 @@ export function Reader() {
             <UpNext
               key={upNext.id}
               next={upNext}
+              auto={settings.playlist_autonext !== "0"}
               onGo={() => openLesson(upNext.id, { playlist: pl.id, autoplay: true })}
               onCancel={() => setUpNext(null)}
             />

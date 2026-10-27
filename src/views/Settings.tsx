@@ -101,7 +101,7 @@ const groups = (): { title: string | null; tabs: Tab[] }[] => [
           "Adjust the page to your eye. You can also change all of this inside a lesson, with the “Aa” button at the top right.",
         ),
         keys:
-          "lecture page pages defilement mise en page police taille texte couleur papier sepia crepuscule nuit encre interligne largeur lignes marquage teinte soulignement terminer connus traduire phrase prononcer automatique panneau mot flottant droite immersion petit ecran tourner pages audio voix suivre lanterne reading layout scroll font size color paper sepia dusk night ink line spacing width highlighting tint underline finish known translate sentence pronounce panel word floating docked immersion small screen turn pages playback audio voice follow lantern aa",
+          "lecture page pages defilement mise en page police taille texte couleur papier sepia crepuscule nuit encre interligne largeur lignes marquage teinte soulignement terminer connus traduire phrase prononcer automatique panneau mot flottant droite immersion petit ecran tourner pages audio voix suivre lanterne reading layout scroll font size color paper sepia dusk night ink line spacing width highlighting tint underline finish known translate sentence pronounce panel word floating docked immersion small screen turn pages playback audio voice follow lantern aa enchainer suivante playlist automatique next lesson autoplay continuous back to back",
       },
       {
         id: "voice",
@@ -828,6 +828,18 @@ function ReadingPane() {
               </span>
             </div>
             <Switch on={settings.auto_turn !== "0"} onChange={(v) => setSetting("auto_turn", v ? "1" : "0")} label={t("Tourner les pages avec la lecture", "Turn pages with playback")} />
+          </div>
+          <div className="set-row">
+            <div className="grow">
+              <strong>{t("Enchaîner les leçons d'une playlist", "Play a playlist's lessons back to back")}</strong>
+              <span>
+                {t(
+                  "À la fin de l'écoute, la leçon suivante s'ouvre d'elle-même après 8 secondes. Désactivé : elle s'annonce et attend votre clic, le temps de terminer la leçon. Aussi dans le bandeau de la playlist, en haut de la leçon.",
+                  "When playback ends, the next lesson opens by itself after 8 seconds. Off: it's announced and waits for your click, giving you time to finish the lesson. Also in the playlist strip at the top of the lesson.",
+                )}
+              </span>
+            </div>
+            <Switch on={settings.playlist_autonext !== "0"} onChange={(v) => setSetting("playlist_autonext", v ? "1" : "0")} label={t("Enchaîner les leçons d'une playlist", "Play a playlist's lessons back to back")} />
           </div>
         </div>
       </Section>

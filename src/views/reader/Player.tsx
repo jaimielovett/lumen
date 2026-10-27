@@ -24,6 +24,12 @@ export interface PlayerHandle {
   forget(): void;
   /** repart du tout début et lit (playlist d'une seule leçon, en boucle) */
   restart(): void;
+  /**
+   * Fait entendre les mots `a` à `b` tels qu'ils sont dits dans le son ou la vidéo de
+   * la leçon, puis revient où l'on était. Faux si ce n'est pas possible (pas de son,
+   * mots sans horodatage) : la voix de synthèse prend alors le relais.
+   */
+  playClip(a: number, b: number): boolean;
 }
 
 export interface PlaybackState {
@@ -157,6 +163,10 @@ function MakeAudio({ lesson, again, onVoiced }: { lesson: Lesson; again?: boolea
  * arriver au moment où il commence (son déplacement dure environ 60 ms).
  */
 const LANTERN_LEAD = 0.06;
+/** marge après le dernier mot d'un extrait (sa fin minutée tombe parfois sur la dernière syllabe) */
+const CLIP_TAIL = 0.12;
+/** extrait le plus long qu'on fait entendre au toucher (au-delà, l'horodatage est douteux) */
+const CLIP_MAX = 10;
 
 /** Dernier indice i tel que get(i) <= x (recherche dichotomique). */
 export function lastLE(n: number, get: (i: number) => number, x: number): number {
@@ -502,10 +512,72 @@ export const Player = forwardRef<PlayerHandle, Props>(function Player({ lesson, 
    */
   const resumesAway = (cur: number) => !followRef.current && cur >= 0 && (pausedOn.current === null || pausedOn.current === pagesRef.current[pageRef.current]?.start);
 
+  // ---------- extrait d'un mot touché ----------
+  // l'élément joue le temps d'un mot sans que la leçon passe « en lecture » : ni
+  // lanterne, ni position enregistrée, ni temps d'écoute, puis retour où l'on était
+  const clipRef = useRef<{ end: number; back: number; raf: number } | null>(null);
+  const quietPause = useRef(false);
+  const endClip = useCallback(() => {
+    const c = clipRef.current;
+    if (!c) return;
+    clipRef.current = null;
+    cancelAnimationFrame(c.raf);
+    const m = master();
+    if (!m) return;
+    if (!m.paused) {
+      quietPause.current = true;
+      m.pause();
+    }
+    m.currentTime = c.back;
+    setTime(c.back);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [single]);
+  useEffect(() => endClip, [endClip]);
+
+  const playClip = useCallback(
+    (a: number, b: number): boolean => {
+      const m = master();
+      if (!hasMedia || !timing || !m || playing) return false;
+      let first = -1;
+      let last = -1;
+      timing.tokIdx.forEach((ti, k) => {
+        if (ti >= a && ti <= b) {
+          if (first < 0) first = k;
+          last = k;
+        }
+      });
+      if (first < 0) return false;
+      const start = Math.max(0, timing.raw[first][2] - LANTERN_LEAD);
+      const end = timing.raw[last][3] + CLIP_TAIL;
+      if (!(end > start) || end - start > CLIP_MAX) return false;
+      const back = clipRef.current?.back ?? m.currentTime;
+      endClip();
+      stopPronunciation();
+      clipRef.current = { end, back, raf: 0 };
+      m.currentTime = start;
+      const tick = () => {
+        const c = clipRef.current;
+        if (!c) return;
+        if (m.currentTime >= c.end || m.ended) return endClip();
+        c.raf = requestAnimationFrame(tick);
+      };
+      m.play().then(
+        () => {
+          if (clipRef.current) clipRef.current.raf = requestAnimationFrame(tick);
+        },
+        () => endClip(),
+      );
+      return true;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [hasMedia, timing, playing, endClip, single],
+  );
+
   const toggle = useCallback(() => {
     if (hasMedia) {
       const m = master();
       if (!m) return;
+      endClip();
       if (m.paused) {
         const cur = cursorRef.current;
         const r = pages[pageRef.current];
@@ -560,12 +632,14 @@ export const Player = forwardRef<PlayerHandle, Props>(function Player({ lesson, 
     () => ({
       toggle,
       playFrom(i: number) {
+        endClip();
         if (hasMedia) {
           seekToToken(i);
           playMedia();
         } else speakFrom(i);
       },
       pause() {
+        endClip();
         if (hasMedia) pauseMedia();
         else if (playing) {
           speakRef.current?.stop();
@@ -574,6 +648,7 @@ export const Player = forwardRef<PlayerHandle, Props>(function Player({ lesson, 
         }
       },
       stop() {
+        endClip();
         speakRef.current?.stop();
         pauseMedia();
         setPlaying(false);
@@ -585,7 +660,9 @@ export const Player = forwardRef<PlayerHandle, Props>(function Player({ lesson, 
         savedPos.current = 0;
         resumeRef.current = -1;
       },
+      playClip,
       restart() {
+        endClip();
         if (hasMedia) {
           seekTo(0);
           playMedia();
@@ -593,7 +670,7 @@ export const Player = forwardRef<PlayerHandle, Props>(function Player({ lesson, 
       },
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [toggle, hasMedia, seekToToken, speakFrom, playing],
+    [toggle, hasMedia, seekToToken, speakFrom, playing, playClip, endClip],
   );
 
   useEffect(() => {
@@ -607,6 +684,7 @@ export const Player = forwardRef<PlayerHandle, Props>(function Player({ lesson, 
   }, [rate, single]);
 
   const skip = (d: number) => {
+    endClip();
     const m = master();
     if (m) seekTo(Math.min(m.duration || 0, m.currentTime + d));
   };
@@ -631,11 +709,17 @@ export const Player = forwardRef<PlayerHandle, Props>(function Player({ lesson, 
 
   const masterEvents = {
     onPlay: () => {
+      if (clipRef.current) return;
       // le mot touché se tait : la leçon reprend la parole (bouton, Espace ou touches du Mac)
       stopPronunciation();
       setPlaying(true);
     },
     onPause: (e: React.SyntheticEvent<HTMLMediaElement>) => {
+      // fin d'un extrait : la leçon n'a jamais été « en lecture »
+      if (quietPause.current || clipRef.current) {
+        quietPause.current = false;
+        return;
+      }
       setPlaying(false);
       markPause();
       if (dual) videoRef.current?.pause();
